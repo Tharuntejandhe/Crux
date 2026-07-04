@@ -1111,6 +1111,49 @@ group("agentic chat (search tool / protocol parsing / plate)") {
           "catch-up: summary reports the count and what needs you (grounded, no model)")
 }
 
+group("voice-matched drafting (style learner)") {
+    var sid: Int64 = 700
+    func sent(_ body: String) -> MailMessage {
+        sid += 1
+        return MailMessage(id: sid, dateReceived: Date(timeIntervalSinceReferenceDate: Double(sid) * 1000),
+                           isRead: true, isFlagged: false, subject: "Re: something", senderName: "Me",
+                           senderAddress: "me@myself.com", mailbox: "imap://u@h/Sent", messageID: "<s\(sid)@x>",
+                           snippet: body, isUrgent: false, automatedType: 0, unsubscribeType: 0,
+                           isHighImpact: false, needsFollowUp: false, category: 0)
+    }
+
+    // A casual, short writer: "Hey", "Thanks!", ~1-2 sentences.
+    let casual = StyleLearner.profile(fromSent: [
+        sent("Hey Sarah,\nSounds good, Friday works.\nThanks!"),
+        sent("Hey Raj,\nYeah let's do it.\nThanks!"),
+        sent("Hey mom,\nOn my way, see you soon.\nThanks!"),
+        sent("Hey team,\nLooks good, shipping it now.\nThanks!"),
+    ])
+    check(casual.greeting == "Hey", "style: learns the 'Hey' greeting")
+    check(casual.signOff == "Thanks", "style: learns the 'Thanks' sign-off")
+    check(casual.formality == .casual, "style: detects casual tone")
+    check(casual.hasSignal, "style: 4 samples is enough signal")
+    check(casual.styleClause.contains("Hey") && casual.styleClause.lowercased().contains("voice"),
+          "style: the clause tells the model to match the learned voice")
+
+    // A formal writer.
+    let formal = StyleLearner.profile(fromSent: [
+        sent("Dear Mr. Rao,\nPlease find the report attached. Kindly review at your earliest convenience.\nBest regards"),
+        sent("Dear Ms. Iyer,\nI am writing to confirm the schedule for next week.\nRegards"),
+        sent("Dear Sir,\nWith reference to your query, please be advised of the update.\nSincerely"),
+    ])
+    check(formal.formality == .formal, "style: detects formal tone")
+    check(formal.greeting == "Dear", "style: learns the 'Dear' greeting")
+
+    // ownText strips quoted reply history.
+    check(StyleLearner.ownText("Yes, sounds good.\n\nOn Mon, Jul 1, Sarah wrote:\n> the original question") == "Yes, sounds good.",
+          "style: ownText strips quoted history")
+
+    // Not enough samples -> no signal -> no style clause (drafts unaffected).
+    check(!StyleLearner.profile(fromSent: [sent("Hi, ok.")]).hasSignal, "style: one sample is not enough signal")
+    check(StyleLearner.profile(fromSent: []).styleClause.isEmpty, "style: an empty profile adds no clause")
+}
+
 // MARK: - Summary
 
 print("\n――――――――――――――――――――")

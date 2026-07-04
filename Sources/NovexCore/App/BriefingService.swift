@@ -54,6 +54,10 @@ final class BriefingService {
     private var lastDismissed: [String] = []
     private var lastSnoozed: [String] = []
 
+    /// The user's learned writing voice (from Sent mail) so drafts sound like them.
+    /// Cached for the session + persisted; refreshed weekly.
+    private var styleProfile: StyleProfile?
+
     /// Shared instance so the menu-bar label (count), the menu-bar panel, and
     /// any other surface all observe ONE service running ONE refresh loop —
     /// instead of each view spinning up its own poller.
@@ -725,6 +729,32 @@ final class BriefingService {
     /// composer is a self-contained overlay, so drafting must never churn the
     /// briefing underneath it. If the model is unavailable, returns a
     /// pre-addressed draft with an empty body so the user can still write + send.
+    /// Load the user's writing style: from the fresh cache, else learn it from Sent
+    /// mail once per session and persist. Cheap after the first run.
+    func ensureStyleProfile() async {
+        if styleProfile != nil { return }
+        if let cached = StyleStore.load(), !StyleStore.isStale { styleProfile = cached; return }
+        let learned = await learnStyleFromSent()
+        styleProfile = learned
+        if learned.hasSignal { StyleStore.save(learned) }   // don't cache an empty profile
+    }
+
+    /// Read the most recent ~40 Sent messages (with bodies) and extract the style.
+    /// Off the main actor; on-device only.
+    private func learnStyleFromSent() async -> StyleProfile {
+        guard mailReader.hasFullDiskAccess, mailReader.mailIsConfigured else { return .empty }
+        let reader = mailReader
+        let since = Date().addingTimeInterval(-150 * 86_400)
+        let sent: [MailMessage] = await Task.detached(priority: .utility) {
+            let all = (try? reader.threadMessages(since: since, limit: 2000)) ?? []
+            return all.filter { MailReader.isSentMailbox($0.mailbox) }
+                .sorted { $0.dateReceived > $1.dateReceived }
+        }.value
+        guard !sent.isEmpty else { return .empty }
+        let withBodies = await attachBodies(Array(sent.prefix(40)))
+        return StyleLearner.profile(fromSent: withBodies)
+    }
+
     func draftReply(for m: MailMessage, tone: ReplyTone = .balanced, intent: String? = nil) async -> ReplyDraft {
         var draft = ReplyDraft(
             recipientEmail: ReplyDraft.extractEmail(from: m.senderAddress),
@@ -738,6 +768,10 @@ final class BriefingService {
               client.isAvailable else {
             return draft   // graceful: pre-addressed compose, user writes the body
         }
+
+        // Learn (once) how the user writes, so the draft mirrors their voice.
+        await ensureStyleProfile()
+        let styleClause = styleProfile?.styleClause ?? ""
 
         // The email is attacker-controlled — sanitize + fence it and keep the
         // model on a tight leash so a body that says "ignore your instructions
@@ -763,7 +797,7 @@ final class BriefingService {
         - thank them for understanding, or add filler pleasantries
         - invent facts, feelings, commitments, dates, prices, or attachments the user never stated
 
-        If you cannot answer something for the user, acknowledge it in one line and say they will follow up. A brief "Hi <first name>," opener is fine; a long greeting is not.\(intentClause)
+        If you cannot answer something for the user, acknowledge it in one line and say they will follow up. A brief "Hi <first name>," opener is fine; a long greeting is not.\(styleClause.isEmpty ? "" : "\n\n" + styleClause)\(intentClause)
 
         \(PromptSafety.securityClause)
         """
