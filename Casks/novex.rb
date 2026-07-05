@@ -9,7 +9,7 @@
 #   shasum -a 256 dist/Novex.zip).  Replace OWNER with your GitHub username.
 cask "novex" do
   version "0.1.1"
-  sha256 "24855c9295e429b84ec0003b9f01a83ab7e4d0754e727476c591dd29e9a29ca0"
+  sha256 "afd744f349a73fafb640717a50d4419576054abbc00486fcdd564a90fb61ec1a"
 
   url "https://github.com/Tharuntejandhe/Novex/releases/download/v#{version}/Novex.zip"
   name "Novex"

@@ -760,6 +760,34 @@ group("update checker — configured & version compare") {
     check(UpdateChecker.isNewer("v0.1.10", than: "0.1.9"), "numeric (not lexical) compare: .10 > .9")
 }
 
+group("release consistency — version stamps agree") {
+    // The app bundle's version is stamped by Scripts/make-app.sh (VERSION=...); the
+    // Homebrew cask advertises its own `version`. If these drift, the shipped app
+    // self-reports an OLD version, so the update checker fetches the latest release
+    // tag and FALSELY tells every user to "update" to the build they already run.
+    // This actually shipped in v0.1.1 (make-app.sh stayed 0.1.0 while the cask/tag
+    // moved to 0.1.1). Lock them together so it can't recur silently.
+    let here = URL(fileURLWithPath: #filePath)   // .../Sources/NovexDevTests/main.swift
+    let root = here.deletingLastPathComponent()
+                   .deletingLastPathComponent()
+                   .deletingLastPathComponent()
+    func quoted(_ text: String, after key: String) -> String? {
+        guard let r = text.range(of: key) else { return nil }
+        let rest = text[r.upperBound...]
+        guard let open = rest.firstIndex(of: "\"") else { return nil }
+        let afterOpen = rest.index(after: open)
+        guard let close = rest[afterOpen...].firstIndex(of: "\"") else { return nil }
+        return String(rest[afterOpen..<close])
+    }
+    let makeApp = (try? String(contentsOf: root.appendingPathComponent("Scripts/make-app.sh"), encoding: .utf8)) ?? ""
+    let cask = (try? String(contentsOf: root.appendingPathComponent("Casks/novex.rb"), encoding: .utf8)) ?? ""
+    let appVersion = quoted(makeApp, after: "VERSION=")
+    let caskVersion = quoted(cask, after: "version ")
+    check(appVersion != nil, "Scripts/make-app.sh declares a VERSION")
+    check(caskVersion != nil, "Casks/novex.rb declares a version")
+    checkEqual(appVersion, caskVersion, "app bundle version matches cask version (no false update nag)")
+}
+
 group("brain v2 — self, actions, rescue, personal, bots") {
     func m(_ id: Int64, _ sender: String, _ subject: String, snippet: String = "",
            read: Bool = false, automated: Int = 0, unsub: Int = 0,
