@@ -8,8 +8,8 @@
 # Update `version` and `sha256` on every release (sha256 of the released Novex.zip:
 #   shasum -a 256 dist/Novex.zip).  Replace OWNER with your GitHub username.
 cask "novex" do
-  version "0.1.1"
-  sha256 "afd744f349a73fafb640717a50d4419576054abbc00486fcdd564a90fb61ec1a"
+  version "0.1.2"
+  sha256 "2029901ffa8e92782f79eacee27ca63b6988d3f788ba1060223ab0c84a1bee4a"
 
   url "https://github.com/Tharuntejandhe/Novex/releases/download/v#{version}/Novex.zip"
   name "Novex"

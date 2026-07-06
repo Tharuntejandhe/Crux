@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 
 APP_NAME="Novex"
 BUNDLE_ID="com.tarun.novex"
-VERSION="0.1.1"
+VERSION="0.1.2"
 INSTALL_DIR="${HOME}/Applications"
 APP_DIR="${INSTALL_DIR}/${APP_NAME}.app"
 CONTENTS_DIR="${APP_DIR}/Contents"
