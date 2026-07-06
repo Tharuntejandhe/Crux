@@ -52,6 +52,16 @@ struct MailSender: Sendable {
         return out.contains("NOVEX_OK") ? .sent : .failed("Couldn't find that message in Mail to archive.")
     }
 
+    /// Reverse an archive: move the message back from its account's Archive to the
+    /// inbox. Powers "undo" after an archive, so the action stays fully reversible.
+    func unarchive(messageID: String) -> Result {
+        let id = messageID.trimmingCharacters(in: CharacterSet(charactersIn: "<> \n\t"))
+        guard !id.isEmpty else { return .failed("No message id to restore.") }
+        let (out, err) = run(Self.unarchiveScript(messageID: id))
+        if let err { return .failed(Self.friendly(err)) }
+        return out.contains("NOVEX_OK") ? .sent : .failed("Couldn't find that message in Archive.")
+    }
+
     // MARK: - Script generation (pure + testable)
 
     static func sendScript(to recipient: String, from account: String?, subject: String, body: String) -> String {
@@ -83,11 +93,25 @@ struct MailSender: Sendable {
                     set hits to (messages of mailbox "INBOX" of acct whose message id is \(literal(messageID)))
                     if (count of hits) > 0 then
                         set theMsg to item 1 of hits
-                        try
-                            set mailbox of theMsg to (mailbox "Archive" of acct)
-                        on error
-                            set mailbox of theMsg to (mailbox "Archive" of acct)
-                        end try
+                        set mailbox of theMsg to (mailbox "Archive" of acct)
+                        return "NOVEX_OK"
+                    end if
+                end try
+            end repeat
+        end tell
+        return "NOVEX_MISS"
+        """
+    }
+
+    static func unarchiveScript(messageID: String) -> String {
+        """
+        tell application "Mail"
+            repeat with acct in accounts
+                try
+                    set hits to (messages of mailbox "Archive" of acct whose message id is \(literal(messageID)))
+                    if (count of hits) > 0 then
+                        set theMsg to item 1 of hits
+                        set mailbox of theMsg to (mailbox "INBOX" of acct)
                         return "NOVEX_OK"
                     end if
                 end try

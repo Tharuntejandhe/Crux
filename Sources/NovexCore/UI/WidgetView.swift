@@ -732,6 +732,14 @@ struct WidgetView: View {
                             }
                             .help("Mark done — stop showing this")
                     }
+                    if let mid = item.messageID {
+                        Image(systemName: "archivebox")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.3))
+                            .padding(.top, 2)
+                            .appKitTap { Task { await service.archiveInMail(mid) } }
+                            .help("Archive in Mail: move it out of your inbox")
+                    }
                     if item.messageID != nil {
                         Image(systemName: "clock.badge")
                             .font(.system(size: 11, weight: .medium))

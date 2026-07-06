@@ -53,6 +53,9 @@ final class BriefingService {
     /// reversible). Reset when a new action runs.
     private var lastDismissed: [String] = []
     private var lastSnoozed: [String] = []
+    /// Message-IDs archived in Mail by the last action, so "undo" can move them
+    /// back to the inbox (archive is an outward Mail action, but still reversible).
+    private var lastArchived: [String] = []
 
     /// The user's learned writing voice (from Sent mail) so drafts sound like them.
     /// Cached for the session + persisted; refreshed weekly.
@@ -159,11 +162,17 @@ final class BriefingService {
 
         // Undo: reverse the last dismiss / snooze (both are reversible). A trust
         // primitive - the user can always take back an action.
-        if ActionParser.isUndo(q), !lastDismissed.isEmpty || !lastSnoozed.isEmpty {
+        if ActionParser.isUndo(q), !lastDismissed.isEmpty || !lastSnoozed.isEmpty || !lastArchived.isEmpty {
+            // Archived mail was moved in Mail, so undo moves it back (off-main).
+            if !lastArchived.isEmpty {
+                let ids = lastArchived, sender = MailSender.live
+                await Task.detached { for id in ids { _ = sender.unarchive(messageID: id) } }.value
+            }
             for id in lastDismissed { DismissStore.restore(id) }
+            for id in lastArchived { DismissStore.restore(id) }
             for id in lastSnoozed { SnoozeStore.unsnooze(id) }
-            let n = lastDismissed.count + lastSnoozed.count
-            lastDismissed = []; lastSnoozed = []
+            let n = lastDismissed.count + lastSnoozed.count + lastArchived.count
+            lastDismissed = []; lastSnoozed = []; lastArchived = []
             setChatAnswer("Done - I brought \(n == 1 ? "it" : "those \(n)") back.", turnID: turnID)
             await refresh(); return
         }
@@ -488,6 +497,30 @@ final class BriefingService {
             await refresh(foreground: true)
         }
         return result
+    }
+
+    /// Archive a message in Apple Mail (move it out of the inbox) - an explicit
+    /// user tap, never automatic. On success it also clears from Novex and records
+    /// the id so "undo" moves it back to the inbox; on failure (e.g. Automation not
+    /// granted) it does NOT clear and reports why. A short chat turn confirms either
+    /// way, so the result (and the "undo" hint) is always visible in Ask.
+    func archiveInMail(_ messageID: String) async {
+        let sender = MailSender.live
+        let name = message(forID: messageID)?.senderDisplay ?? "that message"
+        let result = await Task.detached(priority: .userInitiated) {
+            sender.archive(messageID: messageID)
+        }.value
+        switch result {
+        case .sent:
+            DismissStore.dismiss(messageID)
+            lastArchived = [messageID]; lastDismissed = []; lastSnoozed = []
+            chat.append(ChatTurn(id: UUID(), question: "",
+                                 answer: "Archived \(name) in Mail. Say \"undo\" to move it back."))
+            await refresh(foreground: true)
+        case .failed(let reason):
+            chat.append(ChatTurn(id: UUID(), question: "",
+                                 answer: "Couldn't archive \(name). \(reason)"))
+        }
     }
 
     /// De-duplicated sender list: "Sarah, Mom, and Facebook".

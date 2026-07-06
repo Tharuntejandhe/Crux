@@ -846,6 +846,19 @@ group("mail sender — close the loop (send/archive), never auto-send") {
     checkEqual(hit.archive(messageID: "<abc@x>"), .sent, "archive finds the message -> .sent")
     let miss = MailSender(run: { _ in ("NOVEX_MISS\n", nil) })
     if case .failed = miss.archive(messageID: "<abc@x>") {} else { check(false, "archive miss should fail") }
+
+    // Archive moves INBOX -> Archive; unarchive is its exact reverse (Archive ->
+    // INBOX), so "undo" after an archive is real, not just a local un-hide.
+    let arch = MailSender.archiveScript(messageID: "<abc@x>")
+    check(arch.contains("mailbox \"INBOX\"") && arch.contains("mailbox \"Archive\""),
+          "archive script reads INBOX and files into Archive")
+    check(arch.contains("NOVEX_OK") && arch.contains("NOVEX_MISS"), "archive script signals hit vs miss")
+    let unarch = MailSender.unarchiveScript(messageID: "<abc@x>")
+    check(unarch.contains("mailbox \"Archive\"") && unarch.contains("(mailbox \"INBOX\" of acct)"),
+          "unarchive script reads Archive and moves back to INBOX")
+    checkEqual(hit.unarchive(messageID: "<abc@x>"), .sent, "unarchive finds the message -> .sent")
+    if case .failed = miss.unarchive(messageID: "<abc@x>") {} else { check(false, "unarchive miss should fail") }
+    if case .failed = hit.archive(messageID: "   ") {} else { check(false, "blank id can't be archived") }
 }
 
 group("brain v2 — self, actions, rescue, personal, bots") {
