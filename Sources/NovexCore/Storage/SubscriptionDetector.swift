@@ -24,7 +24,17 @@ enum SubscriptionDetector {
     /// inference). `now` is injectable for deterministic tests.
     static func detect(from messages: [MailMessage], now: Date) -> [Subscription] {
         // 1–2. Build candidates with any amount we can read from the subject.
-        let candidates: [Candidate] = messages.compactMap { candidate(from: $0) }
+        let raw: [Candidate] = messages.compactMap { candidate(from: $0) }
+
+        // Dedup Gmail's INBOX + "All Mail" copies of the same message. Two same-day
+        // copies otherwise give inferCycle a 0-day gap (a monthly sub called "weekly",
+        // 52x the real cost) and double the message count. Prefer the Message-ID; else
+        // a merchant+amount+day content key.
+        var seen = Set<String>()
+        let candidates = raw.filter { c in
+            let key = c.messageID ?? "\(c.merchantKey)|\(c.amount ?? 0)|\(Int(c.date.timeIntervalSinceReferenceDate / 86_400))"
+            return seen.insert(key).inserted
+        }
 
         // 3. Group by merchant identity.
         let groups = Dictionary(grouping: candidates, by: \.merchantKey)
@@ -165,6 +175,9 @@ enum SubscriptionDetector {
     /// surface it, named after the sender, so nothing is missed.
     static func genericCandidate(from m: MailMessage) -> Candidate? {
         if isNonSubscriptionEmail(subject: m.subject.lowercased(), snippet: m.snippet) { return nil }
+        // A storefront one-off (Amazon/Google/Microsoft order) already failed the
+        // catalog's product guard; never let it re-enter as a generic subscription.
+        if let d = MerchantCatalog.emailDomain(m.senderAddress), MerchantCatalog.isStorefrontDomain(d) { return nil }
         // An UNKNOWN-merchant subscription worth surfacing comes from a billing /
         // receipt address — never from a notification bot (notifications@github,
         // alerts@…). Excluding these kills the "Pixxel $12" GitHub/Vercel
@@ -270,8 +283,10 @@ enum SubscriptionDetector {
         guard sorted.count >= 2 else { return .unknown }
         var gaps: [Double] = []
         for i in 1..<sorted.count {
-            gaps.append(sorted[i].timeIntervalSince(sorted[i - 1]) / 86_400) // days
+            let g = sorted[i].timeIntervalSince(sorted[i - 1]) / 86_400 // days
+            if g >= 1 { gaps.append(g) }   // ignore same-day duplicate copies
         }
+        guard !gaps.isEmpty else { return .unknown }
         gaps.sort()
         let medianDays = gaps[gaps.count / 2]
         switch medianDays {
@@ -342,6 +357,21 @@ enum SubscriptionDetector {
         "statement is available",
         "view your statement",
         "e-statement",
+        // Income / money-in: a payout to YOU is not a subscription you pay for.
+        "received from",
+        "you've received a payment",
+        "you have received a payment",
+        "you've been paid",
+        "you have been paid",
+        "payout",
+        "money received",
+        "has paid you",
+        "credited to your",
+        // Refunds / reversals: a refund is not ongoing spend (often a cancellation).
+        "refund",
+        "refunded",
+        "we refunded",
+        "credit note",
     ]
 
     /// True if the email is billing-shaped but isn't something the user PAYS
@@ -393,9 +423,14 @@ enum SubscriptionDetector {
     }
 
     static func parseCycle(from lowerSubject: String) -> BillingCycle? {
+        // Annual phrasings MUST be checked before "month", or "12 months" / "for
+        // the year" fall through to monthly and the yearly total inflates 12x.
         if lowerSubject.contains("annual") || lowerSubject.contains("yearly")
             || lowerSubject.contains("per year") || lowerSubject.contains("/year")
-            || lowerSubject.contains("/yr") { return .yearly }
+            || lowerSubject.contains("/yr") || lowerSubject.contains("per annum")
+            || lowerSubject.contains("for the year") || lowerSubject.contains("1 year")
+            || lowerSubject.contains("one year") || lowerSubject.contains("12 months")
+            || lowerSubject.contains("12-month") || lowerSubject.contains("12 month") { return .yearly }
         if lowerSubject.contains("quarter") { return .quarterly }
         if lowerSubject.contains("week") { return .weekly }
         if lowerSubject.contains("month") || lowerSubject.contains("/mo")

@@ -1112,6 +1112,42 @@ group("tab-sweep fixes (follow-up / money / cleanup)") {
           "discover: a genuine quality read still passes")
 }
 
+group("money radar accuracy (audit fixes)") {
+    func mm(_ id: Int64, _ sender: String, _ subject: String, snip: String = "",
+            box: String = "imap://u@h/INBOX", mid: String? = nil, day: Double = 100) -> MailMessage {
+        MailMessage(id: id, dateReceived: Date(timeIntervalSinceReferenceDate: day * 86_400),
+                    isRead: false, isFlagged: false, subject: subject, senderName: nil,
+                    senderAddress: sender, mailbox: box, messageID: mid ?? "<m\(id)@x>", snippet: snip)
+    }
+    // #1 Storefront: a one-off Amazon/Google/Microsoft purchase is NOT a subscription,
+    // but a NAMED flagship renewal still is.
+    check(MerchantCatalog.match(senderAddress: "auto-confirm@amazon.com", senderName: "Amazon",
+            subject: "Your Amazon.com order receipt", body: "Monument Valley 3 $4.99") == nil,
+          "money: a one-off Amazon order is not Amazon Prime")
+    check(MerchantCatalog.match(senderAddress: "billing@amazon.com", senderName: "Amazon",
+            subject: "Your Amazon Prime membership", body: "renewed for $14.99") != nil,
+          "money: a named Amazon Prime renewal IS matched")
+    check(SubscriptionDetector.detect(from: [mm(1, "auto-confirm@amazon.com", "Your Amazon.com order receipt", snip: "Order Total: $27.49")], now: Date()).isEmpty,
+          "money: a one-off Amazon order never appears as a subscription")
+    // #2 Annual cycle: "1 year" / "12 months" are yearly, not monthly (12x inflation).
+    checkEqual(SubscriptionDetector.parseCycle(from: "you paid $119.88 for 1 year of premium"), .yearly,
+               "money: '1 year' is a yearly cycle")
+    checkEqual(SubscriptionDetector.parseCycle(from: "billed for 12 months"), .yearly,
+               "money: '12 months' is yearly, not monthly")
+    // #3 Income and #7 refund are excluded.
+    check(SubscriptionDetector.isNonSubscriptionEmail(subject: "payment of $1200 received from client", snippet: nil),
+          "money: income (received from) is excluded")
+    check(SubscriptionDetector.isNonSubscriptionEmail(subject: "your netflix refund receipt", snippet: "we refunded $15.49"),
+          "money: a refund is excluded")
+    // #5 Dedup: two Gmail copies (same Message-ID, INBOX + All Mail) of one receipt
+    // collapse to ONE subscription, not a 52x weekly inflation.
+    let dupInbox = mm(2, "no-reply@spotify.com", "Your Spotify receipt", snip: "You were charged $11.99", mid: "<sp@x>")
+    let dupAllMail = mm(3, "no-reply@spotify.com", "Your Spotify receipt", snip: "You were charged $11.99",
+                        box: "imap://u@h/[Gmail]/All Mail", mid: "<sp@x>")
+    let subs = SubscriptionDetector.detect(from: [dupInbox, dupAllMail], now: Date())
+    check(subs.count <= 1, "money: duplicate Gmail copies collapse to one subscription")
+}
+
 group("P2 tail (Apple subs / unsubscribe source)") {
     func msg(_ id: Int64, day: Double, sender: String, subject: String, body: String = "",
              unsub: Int = 0, automated: Int = 0, cat: Int = 0, name: String? = nil) -> MailMessage {

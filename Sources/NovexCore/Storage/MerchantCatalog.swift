@@ -151,10 +151,29 @@ enum MerchantCatalog {
         return map
     }()
 
+    /// Domains that sell a flagship subscription AND countless one-off items from
+    /// the SAME address (Amazon order, Google Play game, Microsoft Store purchase).
+    /// A bare receipt from them is usually a one-off, so mail from these is only
+    /// treated as the subscription when the product is actually NAMED (see match()).
+    static let storefrontDomains: Set<String> = ["amazon.com", "google.com", "microsoft.com"]
+
+    static func isStorefrontDomain(_ domain: String) -> Bool {
+        storefrontDomains.contains { domain == $0 || domain.hasSuffix("." + $0) }
+    }
+
     /// Match a sender address + subject to a known merchant, if any.
     /// Tries exact/suffix domain match first (most reliable), then name tokens.
     static func match(senderAddress: String?, senderName: String?, subject: String, body: String? = nil) -> Merchant? {
         if let domain = emailDomain(senderAddress) {
+            // Storefront guard (Amazon/Google/Microsoft): only map to the flagship
+            // subscription when its product is NAMED in the subject/body (like the
+            // Apple path). A bare order/game/app receipt returns nil so it is never
+            // listed as "Amazon Prime $27.49/mo".
+            if let store = storefrontDomains.first(where: { domain == $0 || domain.hasSuffix("." + $0) }),
+               let m = byDomain[store] {
+                let hay = (subject + " " + (body ?? "")).lowercased()
+                return m.nameTokens.contains { !$0.isEmpty && hay.contains($0) } ? m : nil
+            }
             if let exact = byDomain[domain] { return exact }
             // Suffix match: "email.netflix.com" → "netflix.com".
             for (d, m) in byDomain where domain == d || domain.hasSuffix("." + d) {
