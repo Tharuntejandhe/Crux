@@ -1146,6 +1146,10 @@ group("money radar accuracy (audit fixes)") {
                         box: "imap://u@h/[Gmail]/All Mail", mid: "<sp@x>")
     let subs = SubscriptionDetector.detect(from: [dupInbox, dupAllMail], now: Date())
     check(subs.count <= 1, "money: duplicate Gmail copies collapse to one subscription")
+    // #6 A KNOWN merchant with a bland subject but a receipt in the BODY is detected
+    // (false-negative fix), while an UNKNOWN sender still needs it in the subject.
+    check(!SubscriptionDetector.detect(from: [mm(8, "no-reply@spotify.com", "Your Spotify Premium", snip: "Payment receipt. You were charged $11.99")], now: Date()).isEmpty,
+          "money: a known merchant with the receipt only in the body is still detected")
     // #4 Currency parsing: pick the CHARGED amount, not the wrong currency or a discount.
     let mixed = SubscriptionDetector.parseAmount(from: "Total ₹499 (approx $6 USD)")
     checkEqual(mixed.0, 499, "money: mixed currency picks the real charge amount, not the $ approx")

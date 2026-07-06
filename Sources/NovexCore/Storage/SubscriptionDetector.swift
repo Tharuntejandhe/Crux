@@ -99,7 +99,15 @@ enum SubscriptionDetector {
             senderAddress: m.senderAddress, senderName: m.senderName, subject: subject, body: m.snippet
         )
 
-        let looksBilling = isBillingSubject(lowerSubject)
+        // For a KNOWN catalog merchant (a trusted subscription sender), a bland
+        // subject with the receipt language only in the BODY is still a real
+        // subscription, so check subject+body - the Apple path already trusts the
+        // body this way. An UNKNOWN sender stays subject-only: we must never trust a
+        // stranger's body text to manufacture a subscription.
+        let billingHay = merchant != nil
+            ? (lowerSubject + " " + (m.snippet ?? "").lowercased())
+            : lowerSubject
+        let looksBilling = isBillingSubject(billingHay)
         guard let merchant, looksBilling else {
             // Unknown sender → require a GENUINE transaction token (receipt /
             // charged / payment), not just a billing-SHAPED subject. A stranger
