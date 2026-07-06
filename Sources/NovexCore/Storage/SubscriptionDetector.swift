@@ -458,18 +458,48 @@ enum SubscriptionDetector {
     /// Handles "$15.99", "USD 15.99", "15,99 €", "₹499", "Rs. 1,499.00".
     static func parseAmount(from text: String) -> (Double?, String?) {
         let lower = text.lowercased()
+        let chars = Array(lower)
 
-        // Find a currency anchor and the nearest number after (or before) it.
+        // Collect EVERY currency-symbol occurrence with its position, not just the
+        // first one in a fixed symbol order. "Total ₹499 (approx $6)" has both, and
+        // the old code always took the $ (first in the map) even though ₹499 is the
+        // real charge.
+        var anchors: [(offset: Int, token: String, code: String)] = []
         for (token, code) in currencyMap {
-            guard let range = lower.range(of: token) else { continue }
-            // Search a window after the symbol first, then before.
-            let after = String(lower[range.upperBound...].prefix(16))
-            if let value = firstNumber(in: after) { return (value, code) }
-            let beforeStart = lower.index(range.lowerBound, offsetBy: -16, limitedBy: lower.startIndex) ?? lower.startIndex
-            let before = String(lower[beforeStart..<range.lowerBound])
-            if let value = firstNumber(in: before, takeLast: true) { return (value, code) }
+            var from = lower.startIndex
+            while let r = lower.range(of: token, range: from..<lower.endIndex) {
+                anchors.append((lower.distance(from: lower.startIndex, to: r.lowerBound), token, code))
+                from = r.upperBound
+            }
         }
-        return (nil, nil)
+        guard !anchors.isEmpty else { return (nil, nil) }
+
+        // A cue that this is the amount CHARGED (vs a discount/approx conversion).
+        let positiveCues = ["total", "charged", "amount due", "you paid", "amount paid",
+                            "billed", "payment of", "grand total"]
+
+        var best: (amount: Double, code: String, score: Int, offset: Int)?
+        for a in anchors {
+            guard let idx = lower.index(lower.startIndex, offsetBy: a.offset, limitedBy: lower.endIndex) else { continue }
+            let tokEnd = lower.index(idx, offsetBy: a.token.count, limitedBy: lower.endIndex) ?? lower.endIndex
+            // Prefer the number right after the symbol; fall back to just before it.
+            var value = firstNumber(in: String(lower[tokEnd...].prefix(16)))
+            if value == nil {
+                let beforeStart = lower.index(idx, offsetBy: -16, limitedBy: lower.startIndex) ?? lower.startIndex
+                value = firstNumber(in: String(lower[beforeStart..<idx]), takeLast: true)
+            }
+            guard let v = value else { continue }
+            // Score using ONLY the text immediately before the symbol ("total $49.99"),
+            // so the cue attaches to the amount it labels, not to every nearby amount.
+            let ctx = String(chars[max(0, a.offset - 16)..<a.offset])
+            let score = positiveCues.contains(where: { ctx.contains($0) }) ? 2 : 0
+            // Highest score wins; ties go to the earliest amount (usually the main one).
+            if best == nil || score > best!.score || (score == best!.score && a.offset < best!.offset) {
+                best = (v, a.code, score, a.offset)
+            }
+        }
+        guard let b = best else { return (nil, nil) }
+        return (b.amount, b.code)
     }
 
     /// Extract the first (or last) decimal number from a short string, handling

@@ -1146,6 +1146,14 @@ group("money radar accuracy (audit fixes)") {
                         box: "imap://u@h/[Gmail]/All Mail", mid: "<sp@x>")
     let subs = SubscriptionDetector.detect(from: [dupInbox, dupAllMail], now: Date())
     check(subs.count <= 1, "money: duplicate Gmail copies collapse to one subscription")
+    // #4 Currency parsing: pick the CHARGED amount, not the wrong currency or a discount.
+    let mixed = SubscriptionDetector.parseAmount(from: "Total ₹499 (approx $6 USD)")
+    checkEqual(mixed.0, 499, "money: mixed currency picks the real charge amount, not the $ approx")
+    checkEqual(mixed.1, "INR", "money: mixed currency picks the real currency")
+    checkEqual(SubscriptionDetector.parseAmount(from: "You saved ₹100. Total charged ₹499").0, 499,
+               "money: picks the total charged, not the savings")
+    checkEqual(SubscriptionDetector.parseAmount(from: "$5 off, total $49.99").0, 49.99,
+               "money: picks the total, not the discount")
 }
 
 group("P2 tail (Apple subs / unsubscribe source)") {
