@@ -14,7 +14,7 @@ struct MoneyRadarView: View {
                 scanningCard
             case .needsFullDiskAccess:
                 statusCard(icon: "lock.shield", title: "Grant Full Disk Access",
-                           detail: "Money Radar reads renewal emails from Mail's local store — never your bank.")
+                           detail: "Money Radar reads renewal emails from Mail's local store, never your bank.")
             case .error(let msg):
                 statusCard(icon: "exclamationmark.triangle", title: "Couldn't scan", detail: msg)
             case .empty:

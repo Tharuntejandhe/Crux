@@ -221,7 +221,7 @@ struct MailMessage: Identifiable, Hashable, Sendable {
         guard let s = snippet?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else {
             return subject
         }
-        return "\(subject) — \(s.prefix(280))"
+        return "\(subject): \(s.prefix(280))"
     }
 
     /// Apple's "Transactions" category (bills / receipts / payments). macOS 26

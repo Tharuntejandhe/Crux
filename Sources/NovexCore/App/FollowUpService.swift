@@ -23,14 +23,16 @@ final class FollowUpService {
     /// thread without re-querying.
     private var scanned: [MailMessage] = []
 
-    /// Clear a follow-up the user has handled. Reversible (DismissStore), and
-    /// applied instantly to the current report (no re-read of Mail) so the row
-    /// disappears the moment they tap Done.
+    /// Clear a follow-up the user has handled: hide the WHOLE thread from
+    /// Follow-ups instantly (no re-read of Mail). The tapped message is also
+    /// dismissed app-wide via the shared DismissStore. Dropping the whole thread
+    /// (not just the one message) is essential: leaving the rest would let
+    /// buildReport reclassify it by the new latest message and flip the cleared
+    /// row into the other section. Not reversible from here.
     func dismiss(_ item: FollowUpItem) {
         guard let id = item.message.messageID else { return }
         DismissStore.dismiss(id)
-        let dismissed = DismissStore.dismissed()
-        scanned = scanned.filter { !($0.messageID.map(dismissed.contains) ?? false) }
+        scanned = Self.hidingDismissedThreads(scanned, dismissed: DismissStore.dismissed())
         report = Self.buildReport(from: scanned, now: Date())
     }
 
@@ -67,10 +69,9 @@ final class FollowUpService {
         // marked Done: a follow-up you've handled must stay gone, here as in Inbox.
         let asleep = SnoozeStore.asleepIDs()
         let dismissed = DismissStore.dismissed()
-        let visible = messages.filter {
+        let visible = Self.hidingDismissedThreads(messages, dismissed: dismissed).filter {
             !MuteStore.isMuted($0.senderAddress)
                 && !($0.messageID.map(asleep.contains) ?? false)
-                && !($0.messageID.map(dismissed.contains) ?? false)
         }
         scanned = visible
         myAddresses = Set(visible
@@ -83,6 +84,21 @@ final class FollowUpService {
         report = Self.buildReport(from: visible, now: now)
         lastScan = now
         state = .ready
+    }
+
+    /// Remove EVERY message of any thread that contains a dismissed message. If we
+    /// dropped only the one dismissed message, buildReport would re-group the
+    /// thread's remaining messages and reclassify it by the new latest one, so a
+    /// cleared "needs reply" would flip into "waiting on them" (or a cleared
+    /// "waiting on them" would start nagging you to reply to mail you answered).
+    /// Hiding the whole thread makes "Done" actually stick. Pure + testable.
+    nonisolated static func hidingDismissedThreads(_ messages: [MailMessage], dismissed: Set<String>) -> [MailMessage] {
+        guard !dismissed.isEmpty else { return messages }
+        let deadKeys = Set(messages
+            .filter { $0.messageID.map(dismissed.contains) ?? false }
+            .map { threadKey($0) })
+        guard !deadKeys.isEmpty else { return messages }
+        return messages.filter { !deadKeys.contains(threadKey($0)) }
     }
 
     /// Stable thread key: conversation id when present, else normalized subject.
@@ -139,7 +155,7 @@ final class FollowUpService {
             guard age >= 0 else { continue }   // ignore clock-skew/future dates
             // The human on the other side = most recent incoming sender.
             let counterpart = sorted.first(where: { !isMine($0) })
-            let counterpartName = counterpart?.senderDisplay ?? "—"
+            let counterpartName = counterpart?.senderDisplay ?? "someone"
 
             if isMine(latest) {
                 // You spoke last → waiting on them — but only for a REAL two-way

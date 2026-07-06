@@ -95,7 +95,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 NotchModel.shared.showPeek(icon: "envelope.fill", title: "Sarah Chen",
-                    subtitle: "Re: Q3 partnership proposal — finalize by Friday?",
+                    subtitle: "Re: Q3 partnership proposal, finalize by Friday?",
                     messageID: "demo-1", linger: 90)
             }
         }

@@ -33,7 +33,7 @@ struct FollowUpView: View {
                 scanningCard
             case .needsFullDiskAccess:
                 statusCard(icon: "lock.shield", title: "Grant Full Disk Access",
-                           detail: "Follow-up Radar reads your threads on-device — never your bank or the network.")
+                           detail: "Follow-up Radar reads your threads on-device, never your bank or the network.")
             case .error(let msg):
                 statusCard(icon: "exclamationmark.triangle", title: "Couldn't scan", detail: msg)
             case .ready:

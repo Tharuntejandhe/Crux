@@ -29,7 +29,7 @@ struct OnboardingView: View {
                     .foregroundStyle(.white.opacity(0.95))
             }
 
-            Text("Your private, on-device inbox assistant. First — who am I working for?")
+            Text("Your private, on-device inbox assistant. First, who am I working for?")
                 .font(.system(size: 12))
                 .foregroundStyle(.white.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)

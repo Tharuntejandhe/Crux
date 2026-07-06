@@ -49,7 +49,11 @@ struct MailSender: Sendable {
         guard !id.isEmpty else { return .failed("No message id to archive.") }
         let (out, err) = run(Self.archiveScript(messageID: id))
         if let err { return .failed(Self.friendly(err)) }
-        return out.contains("NOVEX_OK") ? .sent : .failed("Couldn't find that message in Mail to archive.")
+        if out.contains("NOVEX_OK") { return .sent }
+        if out.contains("NOVEX_NOARCHIVE") {
+            return .failed("That account has no Archive mailbox Novex can move it to.")
+        }
+        return .failed("Couldn't find that message in Mail to archive.")
     }
 
     /// Reverse an archive: move the message back from its account's Archive to the
@@ -82,18 +86,38 @@ struct MailSender: Sendable {
         """
     }
 
-    static func archiveScript(messageID: String) -> String {
-        // Scan each account's inbox for the id; move the match to that account's
-        // archive (fall back to a mailbox literally named "Archive"). Print a
-        // sentinel so the caller can tell a hit from a silent miss.
+    // Different providers file archived mail in different mailboxes: iCloud/IMAP use
+    // one literally named "Archive", Gmail uses "All Mail" (there is NO "Archive"),
+    // so a hardcoded "Archive" silently failed for every Gmail user. We resolve each
+    // account's archive mailbox BY NAME instead. Emitted as an AppleScript handler
+    // shared by archive + unarchive.
+    private static let archiveResolver = """
+        on archiveBoxOf(acct)
+            tell application "Mail"
+                repeat with mb in mailboxes of acct
+                    set mbn to (name of mb) as string
+                    if mbn is "Archive" or mbn is "Archived" or mbn contains "All Mail" then
+                        return mb
+                    end if
+                end repeat
+            end tell
+            return missing value
+        end archiveBoxOf
         """
+
+    static func archiveScript(messageID: String) -> String {
+        // Find the id in each account's INBOX and move it to that account's archive
+        // mailbox. Sentinels tell the caller hit / no-archive-mailbox / miss apart.
+        """
+        \(archiveResolver)
         tell application "Mail"
             repeat with acct in accounts
                 try
                     set hits to (messages of mailbox "INBOX" of acct whose message id is \(literal(messageID)))
                     if (count of hits) > 0 then
-                        set theMsg to item 1 of hits
-                        set mailbox of theMsg to (mailbox "Archive" of acct)
+                        set theBox to my archiveBoxOf(acct)
+                        if theBox is missing value then return "NOVEX_NOARCHIVE"
+                        set mailbox of (item 1 of hits) to theBox
                         return "NOVEX_OK"
                     end if
                 end try
@@ -105,14 +129,17 @@ struct MailSender: Sendable {
 
     static func unarchiveScript(messageID: String) -> String {
         """
+        \(archiveResolver)
         tell application "Mail"
             repeat with acct in accounts
                 try
-                    set hits to (messages of mailbox "Archive" of acct whose message id is \(literal(messageID)))
-                    if (count of hits) > 0 then
-                        set theMsg to item 1 of hits
-                        set mailbox of theMsg to (mailbox "INBOX" of acct)
-                        return "NOVEX_OK"
+                    set theBox to my archiveBoxOf(acct)
+                    if theBox is not missing value then
+                        set hits to (messages of theBox whose message id is \(literal(messageID)))
+                        if (count of hits) > 0 then
+                            set mailbox of (item 1 of hits) to (mailbox "INBOX" of acct)
+                            return "NOVEX_OK"
+                        end if
                     end if
                 end try
             end repeat
@@ -152,8 +179,14 @@ struct MailSender: Sendable {
 
     static func isValidEmail(_ s: String) -> Bool {
         guard let at = s.firstIndex(of: "@"), at != s.startIndex else { return false }
+        // Reject control/quote/whitespace characters: they never appear in a real
+        // address, and a stray quote or newline in a "recipient" is a red flag even
+        // though literal() would neutralize it downstream.
+        if s.unicodeScalars.contains(where: { $0.value < 0x20 || $0 == "\"" || $0 == " " || $0 == "\t" }) {
+            return false
+        }
         let domain = s[s.index(after: at)...]
-        return domain.contains(".") && !s.contains(" ") && s.last != "." && !domain.isEmpty
+        return domain.contains(".") && s.last != "." && !domain.isEmpty
             && s.firstIndex(of: "@") == s.lastIndex(of: "@")
     }
 

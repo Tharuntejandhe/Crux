@@ -55,7 +55,7 @@ enum ReplyTone: String, CaseIterable, Sendable {
     /// Length/voice guidance appended to the drafting instructions.
     var guidance: String {
         switch self {
-        case .balanced: return "Keep it to 2-4 short sentences — natural and direct."
+        case .balanced: return "Keep it to 2 to 4 short sentences, natural and direct."
         case .shorter:  return "Keep it to 1-2 short sentences. Get straight to the point."
         case .warmer:   return "Warm and friendly, 2-4 sentences. A personal touch is welcome."
         case .formal:   return "Professional and polished, 2-4 sentences. No slang or emoji."

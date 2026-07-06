@@ -152,7 +152,7 @@ final class NotificationService {
             let c = max(importantCount, 1)
             return "\(c) thing\(c == 1 ? "" : "s") need\(c == 1 ? "s" : "") your attention today."
         }
-        return "\(n) thing\(n == 1 ? "" : "s") need\(n == 1 ? "s" : "") you today — \(listPhrase(parts))."
+        return "\(n) thing\(n == 1 ? "" : "s") need\(n == 1 ? "s" : "") you today: \(listPhrase(parts))."
     }
 
     private nonisolated static func listPhrase(_ items: [String]) -> String {

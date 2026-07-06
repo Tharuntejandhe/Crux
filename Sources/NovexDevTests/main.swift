@@ -422,16 +422,43 @@ group("follow-up radar — thread classification (pure)") {
                  tm(33, conv: 301, from: me, name: "Me", box: sent, daysAgo: 5)]
     checkEqual(FollowUpService.buildReport(from: fresh, now: now).waitingOn.count, 1,
                "waiting-on within 14 days is still shown")
+
+    // Thread-flip guard (the "I cleared it and it jumped to the other list" bug):
+    // clearing ONE message must hide the WHOLE thread, else buildReport reclassifies
+    // the remaining messages by the new latest one and the row reappears.
+    let flip = [tm(40, conv: 400, from: "carol@x.com", name: "Carol", box: inbox, daysAgo: 6),
+                tm(41, conv: 400, from: me, name: "Me", box: sent, daysAgo: 4),
+                tm(42, conv: 400, from: "carol@x.com", name: "Carol", box: inbox, daysAgo: 1)]
+    checkEqual(FollowUpService.buildReport(from: flip, now: now).needsReply.count, 1,
+               "their latest message makes the thread a needs-reply")
+    let afterDone = FollowUpService.hidingDismissedThreads(flip, dismissed: ["<m42@x>"])
+    check(afterDone.isEmpty, "clearing one message removes the ENTIRE thread")
+    let flipReport = FollowUpService.buildReport(from: afterDone, now: now)
+    check(flipReport.needsReply.isEmpty && flipReport.waitingOn.isEmpty,
+          "cleared thread does not flip into waiting-on")
+    check(FollowUpService.hidingDismissedThreads(flip, dismissed: []).count == 3,
+          "nothing dismissed -> thread untouched")
 }
 
 group("prompt style — generated text must not use em-dash / en-dash") {
-    // The on-device model mirrors punctuation it sees; an em-dash reads as "AI-written",
-    // so every user-facing prompt carries this prohibition.
-    check(PromptSafety.noDashClause.contains("—"), "clause names the em-dash it forbids")
-    check(PromptSafety.noDashClause.contains("–"), "clause names the en-dash it forbids")
-    check(PromptSafety.noDashClause.lowercased().contains("never use"), "clause is a hard prohibition")
-    // And the prompts must not slip an em-dash of their own into the model's context.
-    check(!PromptSafety.securityClause.contains("—"), "security clause has no stray em-dash")
+    let emdash = "\u{2014}", endash = "\u{2013}"
+    // The clause forbids long dashes WITHOUT printing the glyph (naming the exact
+    // character can prime a small model to emit it).
+    check(!PromptSafety.noDashClause.contains(emdash), "clause itself contains no em-dash")
+    check(!PromptSafety.noDashClause.contains(endash), "clause itself contains no en-dash")
+    check(PromptSafety.noDashClause.lowercased().contains("never use") &&
+          PromptSafety.noDashClause.lowercased().contains("dash"), "clause is a hard dash prohibition")
+    // No prompt scaffolding may show the model a dash it would mirror.
+    check(!PromptSafety.securityClause.contains(emdash), "security clause has no em-dash")
+    check(!PromptSafety.fence("x").contains(emdash), "the fence delimiter (in EVERY prompt) has no em-dash")
+    // The PRIMARY answer path (NovexAgent) must carry the rule, not just the fallback.
+    if #available(macOS 26.0, *) {
+        check(NovexAgent.instructions(plate: "p", stats: "s").lowercased().contains("dash"),
+              "the agent answer path carries the no-dash rule")
+    }
+    // Untrusted email data is dash-normalized before the model ever sees it.
+    check(!PromptSafety.sanitize("Q3 2024\(endash)2025 plan").contains(endash), "sanitize strips en-dash from data")
+    check(!PromptSafety.sanitize("Hi \(emdash) thanks").contains(emdash), "sanitize strips em-dash from data")
 }
 
 group("declutter — newsletter grouping + unsubscribe parsing (pure)") {
@@ -475,13 +502,13 @@ group("declutter — newsletter grouping + unsubscribe parsing (pure)") {
 
 group("daily digest — phrasing (pure)") {
     checkEqual(NotificationService.digestBody(actionCounts: [.reply: 1, .pay: 1, .review: 1], importantCount: 3),
-               "3 things need you today — a reply, a payment, and a review.",
+               "3 things need you today: a reply, a payment, and a review.",
                "three distinct actions read as a natural list")
     checkEqual(NotificationService.digestBody(actionCounts: [.reply: 2], importantCount: 2),
-               "2 things need you today — 2 replies.",
+               "2 things need you today: 2 replies.",
                "pluralizes a single repeated action")
     checkEqual(NotificationService.digestBody(actionCounts: [.reply: 1], importantCount: 1),
-               "1 thing needs you today — a reply.",
+               "1 thing needs you today: a reply.",
                "singular grammar")
     checkEqual(NotificationService.digestBody(actionCounts: [:], importantCount: 2),
                "2 things need your attention today.",
@@ -826,6 +853,8 @@ group("mail sender — close the loop (send/archive), never auto-send") {
     check(!MailSender.isValidEmail("a b@c.com"), "space is invalid")
     check(!MailSender.isValidEmail("a@@b.com"), "double @ is invalid")
     check(!MailSender.isValidEmail("a@b.com."), "trailing dot is invalid")
+    check(!MailSender.isValidEmail("x@y.com\" & foo"), "an embedded quote is rejected")
+    check(!MailSender.isValidEmail("x@y.com\nfoo"), "an embedded newline is rejected")
 
     // Account inference from a mailbox URL (reply from the identity it came in on).
     checkEqual(MailSender.accountHint(fromMailbox: "imap://me%40gmail.com@imap.gmail.com/INBOX"),
@@ -862,21 +891,30 @@ group("mail sender — close the loop (send/archive), never auto-send") {
     _ = spy.sendReply(to: "x@y.com", from: nil, subject: "s", body: "   ")
     check(!called, "empty body is rejected without invoking Mail")
 
-    // Archive maps the sentinel the script prints.
+    // Archive maps the sentinels the script prints.
     let hit = MailSender(run: { _ in ("NOVEX_OK\n", nil) })
     checkEqual(hit.archive(messageID: "<abc@x>"), .sent, "archive finds the message -> .sent")
     let miss = MailSender(run: { _ in ("NOVEX_MISS\n", nil) })
     if case .failed = miss.archive(messageID: "<abc@x>") {} else { check(false, "archive miss should fail") }
+    // The Gmail case: found in INBOX but the account has no archive mailbox we can
+    // resolve -> honest "no archive mailbox" error, NOT a misleading "couldn't find".
+    let noArchive = MailSender(run: { _ in ("NOVEX_NOARCHIVE\n", nil) })
+    if case .failed(let why) = noArchive.archive(messageID: "<abc@x>") {
+        check(why.lowercased().contains("archive mailbox"), "no-archive-mailbox -> honest reason")
+    } else { check(false, "no-archive-mailbox should fail") }
 
-    // Archive moves INBOX -> Archive; unarchive is its exact reverse (Archive ->
-    // INBOX), so "undo" after an archive is real, not just a local un-hide.
+    // Archive resolves the account's archive box BY NAME (Gmail has "All Mail", not
+    // "Archive"), so it works across providers, not just iCloud.
     let arch = MailSender.archiveScript(messageID: "<abc@x>")
-    check(arch.contains("mailbox \"INBOX\"") && arch.contains("mailbox \"Archive\""),
-          "archive script reads INBOX and files into Archive")
-    check(arch.contains("NOVEX_OK") && arch.contains("NOVEX_MISS"), "archive script signals hit vs miss")
+    check(arch.contains("mailbox \"INBOX\"") && arch.contains("archiveBoxOf"),
+          "archive script reads INBOX and resolves the archive box by name")
+    check(arch.contains("All Mail") && arch.contains("\"Archive\""),
+          "archive resolver matches both Gmail (All Mail) and iCloud/IMAP (Archive)")
+    check(arch.contains("NOVEX_OK") && arch.contains("NOVEX_MISS") && arch.contains("NOVEX_NOARCHIVE"),
+          "archive script signals hit / miss / no-archive-mailbox")
     let unarch = MailSender.unarchiveScript(messageID: "<abc@x>")
-    check(unarch.contains("mailbox \"Archive\"") && unarch.contains("(mailbox \"INBOX\" of acct)"),
-          "unarchive script reads Archive and moves back to INBOX")
+    check(unarch.contains("archiveBoxOf") && unarch.contains("(mailbox \"INBOX\" of acct)"),
+          "unarchive resolves the archive box and moves back to INBOX")
     checkEqual(hit.unarchive(messageID: "<abc@x>"), .sent, "unarchive finds the message -> .sent")
     if case .failed = miss.unarchive(messageID: "<abc@x>") {} else { check(false, "unarchive miss should fail") }
     if case .failed = hit.archive(messageID: "   ") {} else { check(false, "blank id can't be archived") }

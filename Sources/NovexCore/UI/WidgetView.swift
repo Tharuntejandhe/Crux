@@ -334,7 +334,7 @@ struct WidgetView: View {
             actionCard(
                 icon: "envelope.badge",
                 title: "Add a mail account",
-                detail: "Sign in via System Settings → Internet Accounts",
+                detail: "Sign in via System Settings > Internet Accounts",
                 actionTitle: "Open Settings",
                 action: openInternetAccountsSettings
             )
@@ -694,7 +694,7 @@ struct WidgetView: View {
 
     private var assistantLine: String {
         if let s = service.briefing.summary, !s.isEmpty { return s }
-        return isCaughtUp ? "It's quiet — nothing needs you right now." : "Here's your inbox."
+        return isCaughtUp ? "It's quiet. Nothing needs you right now." : "Here's your inbox."
     }
 
     private var greeting: String {
@@ -733,7 +733,7 @@ struct WidgetView: View {
                                 dataRevision += 1
                                 Task { await service.refresh() }
                             }
-                            .help("Mark done — stop showing this")
+                            .help("Mark done, stop showing this")
                     }
                     if let mid = item.messageID {
                         Image(systemName: "archivebox")
@@ -1148,8 +1148,8 @@ struct WidgetView: View {
         switch voice.state {
         case .recording:           return "Listening…"
         case .requestingPermission: return "Asking permission…"
-        case .denied:              return "Mic denied — click to fix"
-        case .error:               return "Mic error — click to retry"
+        case .denied:              return "Mic denied, click to fix"
+        case .error:               return "Mic error, click to retry"
         default:                   return "Ask or say something"
         }
     }

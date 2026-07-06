@@ -40,7 +40,11 @@ struct ReplyComposer: View {
                 Spacer(minLength: 0)
             } else {
                 editor
-                toneRow
+                // Once a send is armed or in flight, lock the draft: no tone re-roll
+                // or re-draft can mutate the text under an in-flight send.
+                if !confirming, !sending, !sent {
+                    toneRow
+                }
                 Spacer(minLength: 0)
                 actions
             }
@@ -285,7 +289,10 @@ struct ReplyComposer: View {
     /// surfaces an actionable reason and leaves the draft intact so the user can
     /// retry or fall back to Edit in Mail.
     private func doSend() async {
-        guard let d = draft else { return }
+        // Re-entrancy guard: a fast double-tap of "Send now" must not dispatch two
+        // sends (a duplicate email). MainActor serializes these Tasks, so the first
+        // flips `sending` before the second runs this check.
+        guard let d = draft, !sending, !sent else { return }
         confirming = false
         sendError = nil
         sending = true

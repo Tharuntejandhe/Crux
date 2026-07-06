@@ -195,7 +195,7 @@ struct SettingsView: View {
                 Text("Check for updates")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.92))
-                Text("Once a day, anonymously, via GitHub — the only time Novex uses the network")
+                Text("Once a day, anonymously, via GitHub. The only time Novex uses the network")
                     .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.5))
                     .fixedSize(horizontal: false, vertical: true)
@@ -220,7 +220,7 @@ struct SettingsView: View {
                     Text("Make Novex's voice human")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.92))
-                    Text("Your Mac only has the robotic voice — download a free Premium one (one-time)")
+                    Text("Your Mac only has the robotic voice. Download a free Premium one (one-time)")
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.5))
                         .fixedSize(horizontal: false, vertical: true)
@@ -252,7 +252,7 @@ struct SettingsView: View {
             label("VIP SENDERS", hint: "Always top of the briefing + always notify")
             let vips = VIPStore.all().sorted()
             if vips.isEmpty {
-                Text("None yet — star someone below.")
+                Text("None yet. Star someone below.")
                     .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.4))
             }
             ForEach(vips, id: \.self) { addr in
@@ -279,7 +279,7 @@ struct SettingsView: View {
 
     private var interestsSection: some View {
         VStack(alignment: .leading, spacing: 7) {
-            label("YOUR INTERESTS", hint: "Your field / topics — so “Worth a look” surfaces the right reads")
+            label("YOUR INTERESTS", hint: "Your field or topics, so “Worth a look” surfaces the right reads")
             HStack(spacing: 8) {
                 Image(systemName: "tag.fill")
                     .font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).frame(width: 16)
@@ -328,7 +328,7 @@ struct SettingsView: View {
         let ignored = LearnStore.ignoredSuggestions()
         if !ignored.isEmpty {
             VStack(alignment: .leading, spacing: 7) {
-                label("LEARNED", hint: "You keep skipping these — mute them?")
+                label("LEARNED", hint: "You keep skipping these. Mute them?")
                 ForEach(ignored, id: \.self) { addr in
                     personRow(name: addr, address: addr, trailing: "Mute", tint: .orange) {
                         MuteStore.mute(addr); rev += 1
@@ -384,7 +384,7 @@ struct SettingsView: View {
     /// once the repo is public.)
     private func sendFeedback() {
         let os = ProcessInfo.processInfo.operatingSystemVersionString
-        let body = "\n\n\n— — —\nApp: Novex v0.1\nmacOS: \(os)\nWhat happened / what would make it better:"
+        let body = "\n\n\n---\nApp: Novex v0.1\nmacOS: \(os)\nWhat happened or what would make it better:"
             .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let subject = "Novex feedback".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         if let url = URL(string: "mailto:ishanai4567@gmail.com?subject=\(subject)&body=\(body)") {

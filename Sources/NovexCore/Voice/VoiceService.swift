@@ -43,7 +43,7 @@ final class VoiceService {
         }
         NSLog("[Novex.Voice] speech auth status = \(speechAuth.rawValue)")
         guard speechAuth == .authorized else {
-            state = .denied("Speech recognition denied — enable in Settings → Privacy → Speech Recognition")
+            state = .denied("Speech recognition denied. Enable it in Settings > Privacy > Speech Recognition")
             return false
         }
 
@@ -51,7 +51,7 @@ final class VoiceService {
         let micGranted = await AVCaptureDevice.requestAccess(for: .audio)
         NSLog("[Novex.Voice] mic granted = \(micGranted)")
         guard micGranted else {
-            state = .denied("Microphone denied — enable in Settings → Privacy → Microphone")
+            state = .denied("Microphone denied. Enable it in Settings > Privacy > Microphone")
             return false
         }
 

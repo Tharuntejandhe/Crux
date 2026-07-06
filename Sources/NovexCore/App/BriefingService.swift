@@ -280,11 +280,11 @@ final class BriefingService {
                     default:       kind = m.unsubscribeType > 0 ? " [newsletter]" : ""
                     }
                 }
-                return "- (\(when))\(read)\(kind) \(sender): \(subject)" + (snip.isEmpty ? "" : " — \(snip)")
+                return "- (\(when))\(read)\(kind) \(sender): \(subject)" + (snip.isEmpty ? "" : " - \(snip)")
             }.joined(separator: "\n")
         }
 
-        let honesty = hasRealMatch ? "" : "\n\nIMPORTANT: nothing in the emails below clearly matches what they asked about. If you can't find it, say plainly that you don't see anything about that in their recent mail — do NOT answer from unrelated emails."
+        let honesty = hasRealMatch ? "" : "\n\nIMPORTANT: nothing in the emails below clearly matches what they asked about. If you can't find it, say plainly that you don't see anything about that in their recent mail, and do NOT answer from unrelated emails."
         let instructions = """
         You are Novex, the user's warm, concise personal assistant. Reply in 1 to 2 SHORT sentences, in your OWN words, like a friend who skimmed their inbox. NEVER paste, quote, or list email contents; NEVER use bullet points, headers, greetings, or rows of asterisks, just talk naturally. Use sender names and timing when helpful. Don't invent senders or subjects.
 
@@ -299,7 +299,7 @@ final class BriefingService {
         \(PromptSafety.fence(context))
 
         The user (trusted) asks: \(q)
-        Answer conversationally in 1–2 sentences:
+        Answer conversationally in 1 to 2 sentences:
         """
 
         var answer: String
@@ -307,7 +307,7 @@ final class BriefingService {
            let client = llmClient as? FoundationModelsClient,
            client.isAvailable {
             do { answer = try await client.respond(to: prompt, instructions: instructions) }
-            catch { answer = "Sorry — I couldn't answer that just now." }
+            catch { answer = "Sorry, I couldn't answer that just now." }
         } else {
             answer = "Apple Intelligence isn't available on this Mac, so I can't answer questions yet."
         }
@@ -401,7 +401,9 @@ final class BriefingService {
         let mine = OwnerIdentity.addresses
         var parts: [String] = []
         var mutated = false
-        lastDismissed = []; lastSnoozed = []
+        // Reset ALL undo trackers (incl. lastArchived) so a later "undo" can't
+        // reverse a stale, unrelated archive from an earlier turn.
+        lastDismissed = []; lastSnoozed = []; lastArchived = []
         for action in actions {
             switch action {
             case .draft(let hint, let intent):
@@ -473,7 +475,7 @@ final class BriefingService {
     /// confirmation turn and "undo" support.
     func markDoneFromCitation(_ messageID: String, sender: String) async {
         DismissStore.dismiss(messageID)
-        lastDismissed = [messageID]; lastSnoozed = []
+        lastDismissed = [messageID]; lastSnoozed = []; lastArchived = []
         chat.append(ChatTurn(id: UUID(), question: "",
                              answer: "Done - cleared \(sender). Say \"undo\" to bring it back."))
         await refresh()
@@ -495,7 +497,7 @@ final class BriefingService {
         }.value
         if case .sent = result, let id = original.messageID {
             DismissStore.dismiss(id)
-            lastDismissed = [id]; lastSnoozed = []
+            lastDismissed = [id]; lastSnoozed = []; lastArchived = []
             await refresh(foreground: true)
         }
         return result
@@ -680,7 +682,7 @@ final class BriefingService {
         } else if let d = discover.first {
             NotchModel.shared.showPeek(
                 icon: "sparkles", title: hello,
-                subtitle: "Worth a look — \(d.label)",
+                subtitle: "Worth a look: \(d.label)",
                 messageID: d.messageID, linger: 7)
             lastGreetAt = Date()
         }
@@ -694,30 +696,30 @@ final class BriefingService {
         let now = Date()
         let msgs = [
             MailMessage(id: 901, dateReceived: now.addingTimeInterval(-1800), isRead: false, isFlagged: false,
-                        subject: "Re: Q3 partnership proposal — finalize by Friday?",
+                        subject: "Re: Q3 partnership proposal, finalize by Friday?",
                         senderName: "Sarah Chen", senderAddress: "sarah@northwind.io", mailbox: "INBOX",
                         messageID: "demo-1",
-                        snippet: "Thanks for the deck. If we lock the terms by Friday we hit the launch window — can you confirm?"),
+                        snippet: "Thanks for the deck. If we lock the terms by Friday we hit the launch window, can you confirm?"),
             MailMessage(id: 902, dateReceived: now.addingTimeInterval(-5400), isRead: false, isFlagged: false,
-                        subject: "Invoice INV-2043 — $1,240.00 due Jun 18",
+                        subject: "Invoice INV-2043, $1,240.00 due Jun 18",
                         senderName: "Ramp", senderAddress: "billing@ramp.com", mailbox: "INBOX",
                         messageID: "demo-2", snippet: "Your June invoice is ready. Amount due $1,240.00 by June 18."),
             MailMessage(id: 903, dateReceived: now.addingTimeInterval(-9000), isRead: false, isFlagged: false,
                         subject: "Design review: onboarding flow v3",
                         senderName: "Alex Rivera", senderAddress: "alex@northwind.io", mailbox: "INBOX",
-                        messageID: "demo-3", snippet: "Left comments on the v3 flow — would love your sign-off before we ship Thursday."),
+                        messageID: "demo-3", snippet: "Left comments on the v3 flow, would love your sign-off before we ship Thursday."),
         ]
         lastMessagesSnapshot = msgs
         let items = [
             BriefingItem(icon: "arrowshape.turn.up.left.fill", title: "Sarah Chen wants the partnership finalized",
-                         detail: "Re: Q3 partnership proposal — by Friday", action: .reply, isNew: true, messageID: "demo-1"),
-            BriefingItem(icon: "creditcard.fill", title: "Ramp invoice — $1,240 due Jun 18",
+                         detail: "Re: Q3 partnership proposal, by Friday", action: .reply, isNew: true, messageID: "demo-1"),
+            BriefingItem(icon: "creditcard.fill", title: "Ramp invoice, $1,240 due Jun 18",
                          detail: "Pay before Thursday", action: .pay, isNew: false, messageID: "demo-2"),
             BriefingItem(icon: "checkmark.seal.fill", title: "Alex needs your design sign-off",
-                         detail: "Onboarding flow v3 — ships Thursday", action: .review, isNew: true, messageID: "demo-3"),
+                         detail: "Onboarding flow v3, ships Thursday", action: .review, isNew: true, messageID: "demo-3"),
         ]
         briefing = Briefing(generatedAt: now, items: items, totalUnread: 7,
-            summary: "Three things need you — reply to Sarah on the partnership (she wants it locked by Friday), the $1,240 Ramp invoice is due the 18th, and Alex is waiting on your design sign-off.",
+            summary: "Three things need you: reply to Sarah on the partnership (she wants it locked by Friday), the $1,240 Ramp invoice is due the 18th, and Alex is waiting on your design sign-off.",
             importantCount: 3)
         discover = [
             DigestItem(label: "The quiet rise of on-device AI", sub: "Ben's Bites", messageID: "demo-d1", matches: true),
@@ -726,13 +728,13 @@ final class BriefingService {
         preparedReply = PreparedReply(messageID: "demo-1", draft: ReplyDraft(
             recipientEmail: "sarah@northwind.io", recipientName: "Sarah Chen",
             originalSubject: "Q3 partnership proposal",
-            body: "Hi Sarah — Friday works on my end. The terms look right; let's lock it in. I'll send a calendar invite for a quick final walkthrough Thursday afternoon."))
+            body: "Hi Sarah, Friday works on my end. The terms look right; let's lock it in. I'll send a calendar invite for a quick final walkthrough Thursday afternoon."))
         if UserDefaults.standard.bool(forKey: "NOVEX_DEMO_CHAT") {
             chat = [
                 ChatTurn(id: UUID(), question: "What needs me today?",
                          answer: "Three things: reply to Sarah about the Q3 partnership (she wants it locked by Friday), pay the $1,240 Ramp invoice due the 18th, and sign off on Alex's onboarding flow v3 before Thursday."),
                 ChatTurn(id: UUID(), question: "When's the Ramp invoice due?",
-                         answer: "June 18th — $1,240.00. It's the only bill due this week."),
+                         answer: "June 18th, $1,240.00. It's the only bill due this week."),
             ]
         }
         setMenuBarCount(3)
@@ -842,7 +844,7 @@ final class BriefingService {
             : ""
 
         let instructions = """
-        You are drafting the USER's reply to an email they received. Output ONLY the reply body — no subject line, no signature, no "[Your name]" placeholder.
+        You are drafting the USER's reply to an email they received. Output ONLY the reply body, no subject line, no signature, no "[Your name]" placeholder.
 
         Write it the way a busy real person actually replies:
         - SHORT. 1 to 3 sentences. Match how briefly they wrote. No padding.
@@ -853,7 +855,6 @@ final class BriefingService {
         - apologize for things they did not complain about ("sorry to hear about the issue")
         - thank them for understanding, or add filler pleasantries
         - invent facts, feelings, commitments, dates, prices, or attachments the user never stated
-        - use an em-dash or en-dash ("—" or "–"); use a comma, a period, or the word "to" instead
 
         If you cannot answer something for the user, acknowledge it in one line and say they will follow up. A brief "Hi <first name>," opener is fine; a long greeting is not.\(styleClause.isEmpty ? "" : "\n\n" + styleClause)\(intentClause)
 
@@ -1149,11 +1150,11 @@ final class BriefingService {
             return "several \(noun.many)"
         }
         let present = counts.filter { $0.value > 0 }.sorted { $0.value > $1.value }
-        guard !present.isEmpty else { return "It's quiet — nothing needs you right now." }
+        guard !present.isEmpty else { return "It's quiet. Nothing needs you right now." }
         // Keep it human: name the two biggest buckets, summarize the rest.
         var phrases = present.prefix(2).map { qty($0.value, $0.key.noun) }
         if present.count > 2 { phrases.append("a few other bits") }
-        return "Nothing needs you — just \(naturalList(phrases)) came in."
+        return "Nothing needs you, just \(naturalList(phrases)) came in."
     }
 
     nonisolated static func naturalList(_ items: [String]) -> String {
@@ -1578,19 +1579,19 @@ final class BriefingService {
             // sees them (see PromptSafety).
             let sender = PromptSafety.sanitize(m.senderDisplay, maxChars: 60)
             let content = PromptSafety.sanitize(m.contentForModel)
-            return "\(idx + 1). [\(unreadTag)\(flagTag)\(urgentTag)\(impactTag)\(followTag)]\(countTag) from \(sender) — \(content)"
+            return "\(idx + 1). [\(unreadTag)\(flagTag)\(urgentTag)\(impactTag)\(followTag)]\(countTag) from \(sender): \(content)"
         }.joined(separator: "\n")
 
         let uniqueCount = groups.count
         let maxItems = min(4, uniqueCount)
 
         let instructions = """
-        You are Novex, a warm and concise personal assistant. You speak like a thoughtful friend reminding the user what's in their inbox — natural, conversational, never robotic.
+        You are Novex, a warm and concise personal assistant. You speak like a thoughtful friend reminding the user what's in their inbox, natural and conversational, never robotic.
 
         CRITICAL RULES:
         1. The headline is ONE warm sentence (max 22 words) spoken like a personal assistant briefing the user. SYNTHESIZE across the emails. When 2+ need ACTION, phrase it as priorities (what to do first), e.g. "First, reply to Sarah about Thursday, then Figma's $40 invoice is due Friday." It must be in YOUR OWN words, NEVER a copy of any subject line. Say what the mail MEANS for the user, not a subject like "Re: Application #4821". Don't start with "You have"; no bullet lists.
         2. Never repeat the same email twice. Each item must be a DIFFERENT entry from the numbered list.
-        3. Produce exactly \(maxItems) item(s) — no more, no less.
+        3. Produce exactly \(maxItems) item(s), no more and no less.
         4. Drop newsletters and obvious promos unless they have a deadline.
         5. Plain text only. No quotes, no markdown, no greetings like "Hi" or "Good morning".
         6. Every item MUST include "index": the number of the email it refers to from the numbered list. Never invent an index that isn't in the list, and never reuse the same index twice.
@@ -1606,7 +1607,7 @@ final class BriefingService {
           "items": [
             {
               "index": 3,
-              "title": "what the sender wants / the action to take, your own words, max 7 words — NOT the sender name, NOT the raw subject",
+              "title": "what the sender wants / the action to take, your own words, max 7 words, NOT the sender name, NOT the raw subject",
               "detail": "sender name only, max 5 words",
               "category": "work | finance | social | promo | personal | security | calendar | other",
               "priority": "high | medium | low",
@@ -1615,7 +1616,7 @@ final class BriefingService {
           ]
         }
         items array length MUST equal \(maxItems).
-        "index" is the number (from the numbered inbox list above) of the email each item describes — required, unique per item.
+        "index" is the number (from the numbered inbox list above) of the email each item describes; required and unique per item.
         For 'action', pick what the user most likely needs to do:
         - reply: someone asked a question or expects a response
         - pay: invoice, bill, refund, payment request

@@ -322,6 +322,8 @@ struct NovexAgent {
 
         If they complain about spam, clutter, or too many emails, tell them they can say "clear the newsletters" or open the Cleanup tab.
 
+        \(PromptSafety.noDashClause)
+
         \(PromptSafety.securityClause)
         """
     }
