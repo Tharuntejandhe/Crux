@@ -90,7 +90,7 @@ struct OnboardingView: View {
             }
             .padding(.top, 2)
 
-            Text("Tip: after enabling Full Disk Access, Novex updates automatically.")
+            Text("Tip: after enabling Full Disk Access, reopen Novex if it doesn't refresh on its own.")
                 .font(.system(size: 10))
                 .foregroundStyle(.white.opacity(0.45))
                 .fixedSize(horizontal: false, vertical: true)

@@ -34,6 +34,8 @@ struct FollowUpView: View {
             case .needsFullDiskAccess:
                 statusCard(icon: "lock.shield", title: "Grant Full Disk Access",
                            detail: "Follow-up Radar reads your threads on-device, never your bank or the network.")
+                    .appKitTap { openFDASettings() }
+                    .help("Open Full Disk Access settings")
             case .error(let msg):
                 statusCard(icon: "exclamationmark.triangle", title: "Couldn't scan", detail: msg)
             case .ready:
@@ -210,6 +212,12 @@ struct FollowUpView: View {
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .short
         return f.localizedString(for: date, relativeTo: Date())
+    }
+
+    private func openFDASettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func mailURL(_ m: MailMessage) -> URL? {

@@ -14,6 +14,8 @@ struct DeclutterView: View {
             case .needsFullDiskAccess:
                 statusCard(icon: "lock.shield", title: "Grant Full Disk Access",
                            detail: "Declutter reads which senders are piling up, on-device, never your bank or the network.")
+                    .appKitTap { openFDASettings() }
+                    .help("Open Full Disk Access settings")
             case .error(let msg):
                 statusCard(icon: "exclamationmark.triangle", title: "Couldn't scan", detail: msg)
             case .ready:
@@ -23,6 +25,12 @@ struct DeclutterView: View {
         .padding(.horizontal, 16)
         .padding(.top, 14)
         .task { await service.scanIfNeeded() }
+    }
+
+    private func openFDASettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @ViewBuilder

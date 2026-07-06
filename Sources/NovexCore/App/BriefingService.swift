@@ -1253,6 +1253,12 @@ final class BriefingService {
         }
         MailSync.log("refresh: guards passed, ensuring Mail runs")
 
+        // FDA may have been granted AFTER start() ran (which then early-returned
+        // without learning). Re-learn the owner's identity now that Sent mail is
+        // readable, so notes-to-self are recognized and we never draft a reply to
+        // the user themselves. Idempotent: no-ops once identity is known.
+        await learnOwnerIdentity()
+
         // Only nudge Mail open when the user is actively looking (foreground). We
         // read the on-device store either way — if Mail is closed, we just show
         // what last synced instead of forcing it open behind the user's back.

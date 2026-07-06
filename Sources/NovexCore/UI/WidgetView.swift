@@ -159,6 +159,11 @@ struct WidgetView: View {
             // so we don't poll mail before they've granted access.
             guard hasCompletedOnboarding else { return }
             service.start()
+            // Request Calendar access + do the first pairing on THIS launch. The
+            // AppDelegate path is gated on hasCompletedOnboarding, so on a fresh
+            // install Calendar was never requested and "Up Next" stayed dead until a
+            // relaunch. Mirrors how Reminders is started just below.
+            Task { await CalendarService.shared.start() }
             // Lightweight: pick up a freshly-added calendar event on open WITHOUT
             // the full mail refresh that churned state and bounced the window.
             Task { await service.refreshUpNext() }

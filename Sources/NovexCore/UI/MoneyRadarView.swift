@@ -15,6 +15,8 @@ struct MoneyRadarView: View {
             case .needsFullDiskAccess:
                 statusCard(icon: "lock.shield", title: "Grant Full Disk Access",
                            detail: "Money Radar reads renewal emails from Mail's local store, never your bank.")
+                    .appKitTap { openFDASettings() }
+                    .help("Open Full Disk Access settings")
             case .error(let msg):
                 statusCard(icon: "exclamationmark.triangle", title: "Couldn't scan", detail: msg)
             case .empty:
@@ -30,6 +32,12 @@ struct MoneyRadarView: View {
     }
 
     // MARK: - Report
+
+    private func openFDASettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles") {
+            NSWorkspace.shared.open(url)
+        }
+    }
 
     @ViewBuilder
     private var report: some View {
