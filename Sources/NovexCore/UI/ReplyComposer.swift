@@ -16,6 +16,10 @@ struct ReplyComposer: View {
     @State private var isDrafting = true
     @State private var tone: ReplyTone = .balanced
     @State private var copied = false
+    @State private var confirming = false
+    @State private var sending = false
+    @State private var sent = false
+    @State private var sendError: String?
 
     /// `message://` deep link to open the original in Mail, if we have a real id.
     private var originalURL: URL? {
@@ -155,30 +159,101 @@ struct ReplyComposer: View {
 
     // MARK: - Actions
 
+    private var canSend: Bool {
+        guard let e = draft?.recipientEmail else { return false }
+        return ReplyComposer.isSendable(e) && !bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var recipientLabel: String {
+        draft?.recipientEmail ?? message.senderDisplay
+    }
+
+    @ViewBuilder
     private var actions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let err = sendError {
+                Text(err)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.orange.opacity(0.92))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if sent {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 13)).foregroundStyle(.green)
+                    Text("Sent")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.92))
+                }
+            } else if sending {
+                HStack(spacing: 10) {
+                    PulsingSparkle()
+                    Text("Sending through Mail…")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.82))
+                }
+            } else if confirming {
+                confirmRow
+            } else {
+                defaultActions
+            }
+        }
+    }
+
+    /// The mandatory confirm step: sending is a real outward action, so it never
+    /// happens on the first tap - "Send" arms this, and only "Send now" sends.
+    private var confirmRow: some View {
         HStack(spacing: 8) {
-            Text("Use draft")
-                .font(.system(size: 12, weight: .semibold))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Send to \(recipientLabel)?")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.92)).lineLimit(1)
+                Text("Sends the reply from Mail now")
+                    .font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.5))
+            }
+            Spacer(minLength: 4)
+            Text("Cancel")
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.7))
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.08)))
+                .appKitTap { confirming = false }
+            Text("Send now")
+                .font(.system(size: 11.5, weight: .bold))
                 .foregroundStyle(.black.opacity(0.85))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.green.opacity(0.9)))
+                .appKitTap { Task { await doSend() } }
+                .help("Send this reply through Mail now")
+        }
+    }
+
+    private var defaultActions: some View {
+        HStack(spacing: 8) {
+            Text("Send")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(canSend ? .black.opacity(0.85) : .white.opacity(0.4))
+                .padding(.horizontal, 16).padding(.vertical, 7)
                 .background(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(Color.green.opacity(0.85))
+                        .fill(canSend ? Color.green.opacity(0.85) : Color.white.opacity(0.08))
                 )
+                .appKitTap { if canSend { sendError = nil; confirming = true } }
+                .help(canSend ? "Send this reply through Mail" : "No address to send to - use Edit in Mail")
+            Text("Edit in Mail")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.9))
+                .padding(.horizontal, 11).padding(.vertical, 7)
+                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white.opacity(0.10)))
                 .appKitTap(useInMail)
-                .help("Open this reply in Mail, ready to send")
+                .help("Open this reply in Mail to tweak before sending")
             Text(copied ? "Copied ✓" : "Copy")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.9))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(Color.white.opacity(0.10))
-                )
+                .padding(.horizontal, 11).padding(.vertical, 7)
+                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white.opacity(0.10)))
                 .appKitTap(copyDraft)
-            Spacer()
+            Spacer(minLength: 0)
             Image(systemName: "arrow.clockwise")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.6))
@@ -188,6 +263,10 @@ struct ReplyComposer: View {
                 .help("Re-draft")
         }
     }
+
+    /// Mirror of `MailSender.isValidEmail` for the button-enable check, so the UI
+    /// doesn't offer Send on an address Mail would reject.
+    static func isSendable(_ email: String) -> Bool { MailSender.isValidEmail(email) }
 
     // MARK: - Logic
 
@@ -199,6 +278,27 @@ struct ReplyComposer: View {
         draft = d
         bodyText = d.body
         isDrafting = false
+    }
+
+    /// Runs ONLY after the user taps "Send now". Sends through Mail off the main
+    /// actor, marks the original handled on success, and closes. On failure it
+    /// surfaces an actionable reason and leaves the draft intact so the user can
+    /// retry or fall back to Edit in Mail.
+    private func doSend() async {
+        guard let d = draft else { return }
+        confirming = false
+        sendError = nil
+        sending = true
+        let result = await service.sendReply(d, body: bodyText, original: message)
+        sending = false
+        switch result {
+        case .sent:
+            sent = true
+            try? await Task.sleep(nanoseconds: 850_000_000)
+            onClose()
+        case .failed(let reason):
+            sendError = reason
+        }
     }
 
     private func useInMail() {

@@ -86,6 +86,8 @@ cat > "${CONTENTS_DIR}/Info.plist" <<EOF
     <string>Novex reads your calendar on your Mac to show what's next and connect meetings to the related emails. Your calendar never leaves your computer.</string>
     <key>NSRemindersFullAccessUsageDescription</key>
     <string>Novex reads your Reminders on your Mac so it can show what's on your plate alongside your mail. Your reminders never leave your computer.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Novex controls Apple Mail only when you tap Send or Archive, so it can send the reply you approved or file a message. It never sends on its own.</string>
 </dict>
 </plist>
 EOF

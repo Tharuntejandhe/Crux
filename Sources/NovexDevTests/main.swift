@@ -788,6 +788,66 @@ group("release consistency — version stamps agree") {
     checkEqual(appVersion, caskVersion, "app bundle version matches cask version (no false update nag)")
 }
 
+group("mail sender — close the loop (send/archive), never auto-send") {
+    // AppleScript string escaping: quotes/backslashes escaped, newlines become a
+    // `& linefeed &` join (so the script can't be broken or injected by body text).
+    checkEqual(MailSender.literal(""), "\"\"", "empty string -> \"\"")
+    checkEqual(MailSender.literal("hi"), "\"hi\"", "plain string is quoted")
+    checkEqual(MailSender.literal("a\"b"), "\"a\\\"b\"", "double-quote is escaped")
+    checkEqual(MailSender.literal("a\\b"), "\"a\\\\b\"", "backslash is escaped")
+    checkEqual(MailSender.literal("l1\nl2"), "\"l1\" & linefeed & \"l2\"", "newline -> linefeed join")
+    checkEqual(MailSender.literal("l1\r\nl2"), "\"l1\" & linefeed & \"l2\"", "CRLF normalised to one break")
+
+    // Email validation gates what we even offer to send.
+    check(MailSender.isValidEmail("a@b.com"), "a@b.com is valid")
+    check(!MailSender.isValidEmail("nope"), "no @ is invalid")
+    check(!MailSender.isValidEmail("a@b"), "no dot in domain is invalid")
+    check(!MailSender.isValidEmail("a b@c.com"), "space is invalid")
+    check(!MailSender.isValidEmail("a@@b.com"), "double @ is invalid")
+    check(!MailSender.isValidEmail("a@b.com."), "trailing dot is invalid")
+
+    // Account inference from a mailbox URL (reply from the identity it came in on).
+    checkEqual(MailSender.accountHint(fromMailbox: "imap://me%40gmail.com@imap.gmail.com/INBOX"),
+               "me@gmail.com", "gmail imap mailbox -> account email")
+    checkEqual(MailSender.accountHint(fromMailbox: "imap://bob@host/INBOX"), nil,
+               "non-email login -> nil (fall back to default account)")
+    checkEqual(MailSender.accountHint(fromMailbox: nil), nil, "nil mailbox -> nil")
+
+    // The send script carries the escaped fields and actually sends.
+    let script = MailSender.sendScript(to: "x@y.com", from: "me@z.com", subject: "Re: Hi", body: "Yes.\nThanks")
+    check(script.contains("make new outgoing message"), "send script creates an outgoing message")
+    check(script.contains("send newMsg"), "send script actually sends")
+    check(script.contains("\"x@y.com\""), "send script includes the recipient")
+    check(script.contains("\"Yes.\" & linefeed & \"Thanks\""), "send script includes the multi-line body")
+    check(script.contains("set sender of newMsg") && script.contains("try"),
+          "a valid account sets the sender best-effort (inside a try)")
+    check(!MailSender.sendScript(to: "x@y.com", from: nil, subject: "s", body: "b").contains("set sender"),
+          "no account -> no sender line (Mail uses its default account)")
+
+    // Result mapping through an INJECTED runner (never drives real Mail).
+    let ok = MailSender(run: { _ in ("", nil) })
+    checkEqual(ok.sendReply(to: "x@y.com", from: nil, subject: "s", body: "hello"), .sent,
+               "runner success -> .sent")
+    let denied = MailSender(run: { _ in ("", "execution error: Not authorized to send Apple events (-1743)") })
+    if case .failed(let msg) = denied.sendReply(to: "x@y.com", from: nil, subject: "s", body: "hi") {
+        check(msg.contains("Automation"), "permission error -> actionable Automation guidance")
+    } else { check(false, "denied send should fail") }
+    // Guards run BEFORE the script: bad recipient / empty body never reach Mail.
+    var called = false
+    let spy = MailSender(run: { _ in called = true; return ("", nil) })
+    _ = spy.sendReply(to: "not-an-email", from: nil, subject: "s", body: "hi")
+    check(!called, "invalid recipient is rejected without invoking Mail")
+    called = false
+    _ = spy.sendReply(to: "x@y.com", from: nil, subject: "s", body: "   ")
+    check(!called, "empty body is rejected without invoking Mail")
+
+    // Archive maps the sentinel the script prints.
+    let hit = MailSender(run: { _ in ("NOVEX_OK\n", nil) })
+    checkEqual(hit.archive(messageID: "<abc@x>"), .sent, "archive finds the message -> .sent")
+    let miss = MailSender(run: { _ in ("NOVEX_MISS\n", nil) })
+    if case .failed = miss.archive(messageID: "<abc@x>") {} else { check(false, "archive miss should fail") }
+}
+
 group("brain v2 — self, actions, rescue, personal, bots") {
     func m(_ id: Int64, _ sender: String, _ subject: String, snippet: String = "",
            read: Bool = false, automated: Int = 0, unsub: Int = 0,

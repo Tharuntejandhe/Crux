@@ -468,6 +468,28 @@ final class BriefingService {
         await refresh()
     }
 
+    /// Actually SEND a drafted reply through Apple Mail. This only ever runs from
+    /// an explicit tap on the composer's "Send now" - never automatically. On
+    /// success the original is marked handled (reversible via "undo") and the
+    /// briefing refreshes; the AppleScript runs off the main actor.
+    func sendReply(_ draft: ReplyDraft, body: String, original: MailMessage) async -> MailSender.Result {
+        guard let to = draft.recipientEmail, MailSender.isValidEmail(to) else {
+            return .failed("No valid address to send to - use Edit in Mail instead.")
+        }
+        let account = MailSender.accountHint(fromMailbox: original.mailbox)
+        let subject = draft.replySubject
+        let sender = MailSender.live
+        let result = await Task.detached(priority: .userInitiated) {
+            sender.sendReply(to: to, from: account, subject: subject, body: body)
+        }.value
+        if case .sent = result, let id = original.messageID {
+            DismissStore.dismiss(id)
+            lastDismissed = [id]; lastSnoozed = []
+            await refresh(foreground: true)
+        }
+        return result
+    }
+
     /// De-duplicated sender list: "Sarah, Mom, and Facebook".
     nonisolated static func senderList(_ names: [String]) -> String {
         var seen = Set<String>(); var uniq: [String] = []

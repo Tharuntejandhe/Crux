@@ -167,6 +167,16 @@ struct WidgetView: View {
             // Demo (screenshots): open on a chosen tab.
             if let raw = UserDefaults.standard.string(forKey: "NOVEX_DEMO_TAB"),
                let m = Mode(rawValue: raw) { mode = m }
+            // Demo (screenshots): force the reply composer open on the demo message
+            // so its Send / confirm UI can be captured. Off by default; demo data only.
+            if UserDefaults.standard.bool(forKey: "NOVEX_DEMO_COMPOSE") {
+                Task {
+                    try? await Task.sleep(nanoseconds: 800_000_000)
+                    if let pr = service.preparedReply, let m = service.message(forID: pr.messageID) {
+                        replyTarget = m
+                    }
+                }
+            }
             Task {
                 // Give the first briefing a moment to render, then mark seen
                 // so subsequent refreshes can flag new arrivals.
