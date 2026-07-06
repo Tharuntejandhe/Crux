@@ -669,6 +669,11 @@ final class BriefingService {
     func greetOnWake() async {
         guard UserDefaults.standard.bool(forKey: "hasCompletedOnboarding"),
               Date().timeIntervalSince(lastGreetAt) > 600 else { return }
+        // Stamp the throttle NOW, before the await. Otherwise, on a quiet inbox the
+        // branches below never assign it, so every wake/unlock re-runs refresh(); and
+        // two wake signals (didWake + screenIsUnlocked) could both pass the guard
+        // across the suspension and double-greet.
+        lastGreetAt = Date()
         await refresh()
         let name = (UserDefaults.standard.string(forKey: "ownerName") ?? "")
             .trimmingCharacters(in: .whitespaces)
@@ -684,13 +689,11 @@ final class BriefingService {
                 icon: "tray.full.fill", title: hello,
                 subtitle: "\(top.detail): \(top.title)\(more)",
                 messageID: top.messageID, linger: 7)
-            lastGreetAt = Date()
         } else if let d = discover.first {
             NotchModel.shared.showPeek(
                 icon: "sparkles", title: hello,
                 subtitle: "Worth a look: \(d.label)",
                 messageID: d.messageID, linger: 7)
-            lastGreetAt = Date()
         }
         // else: nothing needs them → no card, by design.
     }
@@ -1088,18 +1091,21 @@ final class BriefingService {
         observers.append(wnc.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.setActive(true) }
+            // On wake the user may not be looking, so DON'T nudge Mail open (that's
+            // the "Mail reopens itself after sleep" bug). Resume the loop + read the
+            // already-synced store in the background.
+            Task { @MainActor in self?.setActive(true, foreground: false) }
         })
     }
 
     /// Transition between "looked at / awake" and "hidden / asleep". On
     /// becoming active we refresh if the data is stale and restart the poll
     /// loop; on becoming inactive we cancel the loop so nothing wakes the CPU.
-    private func setActive(_ active: Bool) {
+    private func setActive(_ active: Bool, foreground: Bool = true) {
         guard active != isActive else { return }
         isActive = active
         if active {
-            Task { await refreshIfStale() }
+            Task { await refreshIfStale(foreground: foreground) }
             resumeRefreshLoop()
         } else {
             refreshTask?.cancel()
@@ -1123,11 +1129,11 @@ final class BriefingService {
     /// Refresh only if the current briefing is older than `maxAge`, so a quick
     /// occlusion flip (e.g. a window briefly covering the widget) doesn't
     /// trigger needless work.
-    private func refreshIfStale(maxAge: TimeInterval = 60) async {
-        // Fired when the panel becomes visible → the user is here, so it's OK to
-        // nudge Mail open to freshen the sync.
+    private func refreshIfStale(maxAge: TimeInterval = 60, foreground: Bool = true) async {
+        // `foreground` nudges Mail open to freshen the sync - fine when the panel
+        // becomes visible (the user is here), NOT on system wake (they may not be).
         if Date().timeIntervalSince(briefing.generatedAt) > maxAge {
-            await refresh(foreground: true)
+            await refresh(foreground: foreground)
         }
     }
 
@@ -1549,7 +1555,14 @@ final class BriefingService {
             return !$0.isNotificationSender && $0.unsubscribeType == 0
         }
         if let newest = notifyCandidates.max(by: { $0.dateReceived < $1.dateReceived }) {
-            if !isFirstEverLoad, newest.dateReceived > lastPeekDate {
+            let now = Date()
+            let lastPeek = UserDefaults.standard.object(forKey: "novex.lastPeekAt") as? Date ?? .distantPast
+            // Throttle new-mail cards to at most one per 10 min, and never while the
+            // user is already looking at the open panel. Our peek is a custom panel
+            // that Focus/Do-Not-Disturb can't suppress, so without this floor a busy
+            // inbox drops a card per email all day (matches the system-banner floor).
+            if !isFirstEverLoad, newest.dateReceived > lastPeekDate,
+               !isActive, now.timeIntervalSince(lastPeek) > 600 {
                 // PII-free: count only, no sender/subject in the log.
                 MailSync.note("notch: showing new-mail card (\(notifyCandidates.count) unread candidate(s))")
                 NotchModel.shared.showPeek(
@@ -1557,6 +1570,7 @@ final class BriefingService {
                     title: "New from \(newest.senderDisplay)",
                     subtitle: newest.subject,
                     messageID: newest.messageID)
+                UserDefaults.standard.set(now, forKey: "novex.lastPeekAt")
             }
             lastPeekDate = max(lastPeekDate, newest.dateReceived)
         }

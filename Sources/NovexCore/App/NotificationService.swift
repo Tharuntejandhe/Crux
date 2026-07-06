@@ -95,6 +95,15 @@ final class NotificationService {
         let actionable = actionCounts.values.reduce(0, +)
         guard actionable > 0 || importantCount > 0 else { return }
 
+        // First run that WOULD fire: baseline instead of firing, so installing after
+        // 7am doesn't pop a "good morning, N things need you" built from mail that
+        // predates the install (the per-arrival banner path baselines the same way).
+        if UserDefaults.standard.string(forKey: "novex.digest.baselined") == nil {
+            UserDefaults.standard.set(day, forKey: "novex.digest.baselined")
+            UserDefaults.standard.set(day, forKey: lastDigestDayKey)
+            return
+        }
+
         let content = UNMutableNotificationContent()
         content.title = "Novex · Good morning"
         content.body = Self.digestBody(actionCounts: actionCounts, importantCount: importantCount)

@@ -154,6 +154,13 @@ struct WidgetView: View {
                 .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
         )
         .animation(.easeInOut(duration: 0.16), value: replyTarget != nil)
+        .onDisappear {
+            // Closing the panel must kill a live mic + any speech - otherwise the
+            // engine keeps recording (and transcribing) with the panel shut, and
+            // TTS keeps reading aloud. Privacy + battery.
+            voice.stopRecording(resetTranscript: true)
+            speech.stop()
+        }
         .onAppear {
             // Only start the briefing service once the user is past onboarding,
             // so we don't poll mail before they've granted access.
@@ -1187,6 +1194,14 @@ struct WidgetView: View {
             openMicrophoneSettings()
         default:
             inputText = ""
+            speech.stop()   // don't record the assistant's own spoken voice back in
+            // Silence auto-stop submits the question without a manual stop tap.
+            voice.onFinish = { [service, bind = $inputText] spoken in
+                let final = spoken.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !final.isEmpty else { return }
+                bind.wrappedValue = ""
+                Task { await service.answerQuestion(final) }
+            }
             Task { try? await voice.startRecording() }
         }
     }

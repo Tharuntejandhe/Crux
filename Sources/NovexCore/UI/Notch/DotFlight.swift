@@ -18,6 +18,9 @@ public final class DotFlight {
     private let duration: CFTimeInterval = 1.2    // brisk but still smooth
     private let arc: CGFloat = 30          // gentle downward dip mid-flight
     private var onArrive: (() -> Void)?
+    /// Bumped on every fly(); the delayed post-arrival cleanup checks it so a stale
+    /// flight can't tear down a newer one (rapid successive notch cards).
+    private var generation = 0
 
     public init() {}
 
@@ -25,6 +28,7 @@ public final class DotFlight {
     /// origin). `onArrive` fires the instant it reaches the icon (open the panel).
     public func fly(from: CGPoint, to: CGPoint, onArrive: @escaping () -> Void) {
         cancel()
+        generation += 1
         start = from; end = to; self.onArrive = onArrive
 
         let panel = NSPanel(contentRect: NSRect(x: from.x - size/2, y: from.y - size/2,
@@ -73,8 +77,11 @@ public final class DotFlight {
         timer?.invalidate(); timer = nil
         onArrive?()                 // open the panel at the moment it lands
         dot.arrived = true          // dot dissolves (scale + fade)
+        let gen = generation
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 320_000_000)
+            // Only clean up if no newer flight started in the meantime.
+            guard gen == self.generation else { return }
             cancel()
         }
     }

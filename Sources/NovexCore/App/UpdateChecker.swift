@@ -64,7 +64,12 @@ public final class UpdateChecker {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let tag = json["tag_name"] as? String
         else { return }
-        let page = (json["html_url"] as? String) ?? "https://github.com/\(Self.repo)/releases/latest"
+        // Only ever open a github.com URL from the update card. GitHub generates
+        // html_url itself (release authors can't set it), but constraining the host
+        // is cheap defense-in-depth so a tap can never navigate off-github.
+        let fallbackPage = "https://github.com/\(Self.repo)/releases/latest"
+        let apiPage = json["html_url"] as? String
+        let page = (apiPage.flatMap { URL(string: $0)?.host == "github.com" ? $0 : nil }) ?? fallbackPage
         let notes = (json["name"] as? String) ?? ""
         available = Self.isNewer(tag, than: Self.currentVersion)
             ? Update(version: tag, url: page, notes: notes)
