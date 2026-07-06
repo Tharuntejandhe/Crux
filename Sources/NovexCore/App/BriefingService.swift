@@ -286,9 +286,11 @@ final class BriefingService {
 
         let honesty = hasRealMatch ? "" : "\n\nIMPORTANT: nothing in the emails below clearly matches what they asked about. If you can't find it, say plainly that you don't see anything about that in their recent mail — do NOT answer from unrelated emails."
         let instructions = """
-        You are Novex, the user's warm, concise personal assistant. Reply in 1–2 SHORT sentences, in your OWN words, like a friend who skimmed their inbox. NEVER paste, quote, or list email contents; NEVER use bullet points, headers, greetings, or rows of asterisks — just talk naturally. Use sender names and timing when helpful. Don't invent senders or subjects.
+        You are Novex, the user's warm, concise personal assistant. Reply in 1 to 2 SHORT sentences, in your OWN words, like a friend who skimmed their inbox. NEVER paste, quote, or list email contents; NEVER use bullet points, headers, greetings, or rows of asterisks, just talk naturally. Use sender names and timing when helpful. Don't invent senders or subjects.
 
-        Each email is tagged. [FYI, no action], [newsletter], and [your own note] are INFORMATIONAL — a login/security code, a "password changed" notice, a receipt, a newsletter. NEVER tell the user they "need" to do anything about those. Only [needs a reply], [bill to pay], [action needed], and [to review] actually need the user. If the question is "what needs me?" and none of those are present, say plainly that nothing needs them and mention it's mostly notifications/newsletters.\(honesty)
+        Each email is tagged. [FYI, no action], [newsletter], and [your own note] are INFORMATIONAL: a login/security code, a "password changed" notice, a receipt, a newsletter. NEVER tell the user they "need" to do anything about those. Only [needs a reply], [bill to pay], [action needed], and [to review] actually need the user. If the question is "what needs me?" and none of those are present, say plainly that nothing needs them and mention it's mostly notifications/newsletters.\(honesty)
+
+        \(PromptSafety.noDashClause)
 
         \(PromptSafety.securityClause)
         """
@@ -851,8 +853,11 @@ final class BriefingService {
         - apologize for things they did not complain about ("sorry to hear about the issue")
         - thank them for understanding, or add filler pleasantries
         - invent facts, feelings, commitments, dates, prices, or attachments the user never stated
+        - use an em-dash or en-dash ("—" or "–"); use a comma, a period, or the word "to" instead
 
         If you cannot answer something for the user, acknowledge it in one line and say they will follow up. A brief "Hi <first name>," opener is fine; a long greeting is not.\(styleClause.isEmpty ? "" : "\n\n" + styleClause)\(intentClause)
+
+        \(PromptSafety.noDashClause)
 
         \(PromptSafety.securityClause)
         """
@@ -903,7 +908,9 @@ final class BriefingService {
         }
 
         let instructions = """
-        You are Novex. Summarize this email thread for the user as AT MOST 3 short bullets: (1) what the other side wants, (2) what was decided or changed, (3) what — if anything — is owed FROM the user next. Each bullet is plain text, max 14 words, no preamble, no "the thread". Skip a bullet if there's nothing to say for it.
+        You are Novex. Summarize this email thread for the user as AT MOST 3 short bullets: (1) what the other side wants, (2) what was decided or changed, (3) what, if anything, is owed FROM the user next. Each bullet is plain text, max 14 words, no preamble, no "the thread". Skip a bullet if there's nothing to say for it.
+
+        \(PromptSafety.noDashClause)
 
         \(PromptSafety.securityClause)
         """
@@ -1581,13 +1588,14 @@ final class BriefingService {
         You are Novex, a warm and concise personal assistant. You speak like a thoughtful friend reminding the user what's in their inbox — natural, conversational, never robotic.
 
         CRITICAL RULES:
-        1. The headline is ONE warm sentence (max 22 words) spoken like a personal assistant briefing the user. SYNTHESIZE across the emails. When 2+ need ACTION, phrase it as priorities — what to do first — e.g. "First, reply to Sarah about Thursday; then Figma's $40 invoice is due Friday." It must be in YOUR OWN words, NEVER a copy of any subject line. Say what the mail MEANS for the user, not a subject like "Re: Application #4821". Don't start with "You have"; no bullet lists.
+        1. The headline is ONE warm sentence (max 22 words) spoken like a personal assistant briefing the user. SYNTHESIZE across the emails. When 2+ need ACTION, phrase it as priorities (what to do first), e.g. "First, reply to Sarah about Thursday, then Figma's $40 invoice is due Friday." It must be in YOUR OWN words, NEVER a copy of any subject line. Say what the mail MEANS for the user, not a subject like "Re: Application #4821". Don't start with "You have"; no bullet lists.
         2. Never repeat the same email twice. Each item must be a DIFFERENT entry from the numbered list.
         3. Produce exactly \(maxItems) item(s) — no more, no less.
         4. Drop newsletters and obvious promos unless they have a deadline.
         5. Plain text only. No quotes, no markdown, no greetings like "Hi" or "Good morning".
         6. Every item MUST include "index": the number of the email it refers to from the numbered list. Never invent an index that isn't in the list, and never reuse the same index twice.
-        7. The "title" says WHAT THE SENDER WANTS or the action to take, in your own words — NOT the sender's name (that goes in "detail"), NOT the raw subject. e.g. for a reschedule request → "Move the call to Friday"; for a $240 invoice → "Pay the $240 invoice"; for "verify by Jul 14" → "Verify identity by Jul 14".
+        7. The "title" says WHAT THE SENDER WANTS or the action to take, in your own words, NOT the sender's name (that goes in "detail"), NOT the raw subject. e.g. for a reschedule request use "Move the call to Friday"; for a $240 invoice use "Pay the $240 invoice"; for "verify by Jul 14" use "Verify identity by Jul 14".
+        8. \(PromptSafety.noDashClause)
 
         \(PromptSafety.securityClause)
         """

@@ -23,6 +23,17 @@ final class FollowUpService {
     /// thread without re-querying.
     private var scanned: [MailMessage] = []
 
+    /// Clear a follow-up the user has handled. Reversible (DismissStore), and
+    /// applied instantly to the current report (no re-read of Mail) so the row
+    /// disappears the moment they tap Done.
+    func dismiss(_ item: FollowUpItem) {
+        guard let id = item.message.messageID else { return }
+        DismissStore.dismiss(id)
+        let dismissed = DismissStore.dismissed()
+        scanned = scanned.filter { !($0.messageID.map(dismissed.contains) ?? false) }
+        report = Self.buildReport(from: scanned, now: Date())
+    }
+
     /// All messages belonging to the same thread as `item`, oldest first.
     func thread(for item: FollowUpItem) -> [MailMessage] {
         let key = Self.threadKey(item.message)
@@ -52,12 +63,14 @@ final class FollowUpService {
             state = .error(String(describing: error))
             return
         }
-        // Respect muted senders (from Declutter) — don't nag about threads with
-        // someone the user has chosen to hide.
+        // Respect muted senders (Declutter), snoozed items, and anything the user
+        // marked Done: a follow-up you've handled must stay gone, here as in Inbox.
         let asleep = SnoozeStore.asleepIDs()
+        let dismissed = DismissStore.dismissed()
         let visible = messages.filter {
             !MuteStore.isMuted($0.senderAddress)
                 && !($0.messageID.map(asleep.contains) ?? false)
+                && !($0.messageID.map(dismissed.contains) ?? false)
         }
         scanned = visible
         myAddresses = Set(visible
@@ -88,7 +101,9 @@ final class FollowUpService {
     nonisolated static let replyMinAge: TimeInterval = 12 * 3600      // give fresh mail time
     nonisolated static let replyMaxAge: TimeInterval = 21 * 86_400    // stop nagging after 3 weeks
     nonisolated static let waitMinAge: TimeInterval = 2 * 86_400      // give them time to reply
-    nonisolated static let waitMaxAge: TimeInterval = 30 * 86_400
+    // Stop showing "waiting on them" after ~2 weeks: if they haven't replied by
+    // then they aren't going to, so it's stale noise, not a live thread.
+    nonisolated static let waitMaxAge: TimeInterval = 14 * 86_400
     nonisolated static let maxPerSection = 6
 
     /// Build the report from a flat list of thread messages (across all

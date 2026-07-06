@@ -46,7 +46,9 @@ struct FollowUpView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)
-        .task { await service.scanIfNeeded() }
+        // Short cache so opening the tab after you act on mail shows fresh state,
+        // not a 5-minute-old snapshot (the "why is this still here" complaint).
+        .task { await service.scanIfNeeded(maxAge: 15) }
     }
 
     // MARK: - Sections
@@ -57,17 +59,34 @@ struct FollowUpView: View {
         if !r.needsReply.isEmpty {
             sectionHeader(icon: "hourglass", tint: .orange, title: "NEEDS YOUR REPLY")
             ForEach(r.needsReply) { item in
-                row(item, trailingReply: true)
-                    .appKitTap { caughtUp = item }
-                    .help("Catch me up, then reply")
+                followRow(item, trailingReply: true, help: "Catch me up, then reply")
             }
         }
         if !r.waitingOn.isEmpty {
             sectionHeader(icon: "clock.arrow.circlepath", tint: .cyan, title: "WAITING ON THEM")
             ForEach(r.waitingOn) { item in
-                row(item, trailingReply: false)
-                    .appKitTap { caughtUp = item }
-                    .help("Catch me up on this thread")
+                followRow(item, trailingReply: false, help: "Catch me up on this thread")
+            }
+        }
+    }
+
+    /// A follow-up row plus a sibling "Done" control. Done sits OUTSIDE the row's
+    /// catch-up tap (AppKitTap overlays its whole view), so clearing a follow-up
+    /// never also opens the digest.
+    private func followRow(_ item: FollowUpItem, trailingReply: Bool, help: String) -> some View {
+        HStack(spacing: 8) {
+            row(item, trailingReply: trailingReply)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .appKitTap { caughtUp = item }
+                .help(help)
+            if item.message.messageID != nil {
+                Image(systemName: "checkmark.circle")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.32))
+                    .padding(.top, 2)
+                    .appKitTap { service.dismiss(item) }
+                    .help("Done: clear this follow-up")
             }
         }
     }

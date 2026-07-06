@@ -411,6 +411,27 @@ group("follow-up radar — thread classification (pure)") {
           "a normal human email wants a reply")
     check(!FollowUpService.wantsReply(tm(9, conv: 1, from: "x@y.com", name: nil, box: inbox, daysAgo: 1, unsub: 1)),
           "a newsletter does not want a reply")
+
+    // Stale "waiting on them" ages out: you replied 20 days ago is past the 14-day
+    // window (the "why is this weeks-old thread still here" fix), while 5 days stays.
+    let stale = [tm(30, conv: 300, from: "them@x.com", name: "Them", box: inbox, daysAgo: 25),
+                 tm(31, conv: 300, from: me, name: "Me", box: sent, daysAgo: 20)]
+    check(FollowUpService.buildReport(from: stale, now: now).waitingOn.isEmpty,
+          "waiting-on older than 14 days is dropped as stale")
+    let fresh = [tm(32, conv: 301, from: "them2@x.com", name: "Them2", box: inbox, daysAgo: 9),
+                 tm(33, conv: 301, from: me, name: "Me", box: sent, daysAgo: 5)]
+    checkEqual(FollowUpService.buildReport(from: fresh, now: now).waitingOn.count, 1,
+               "waiting-on within 14 days is still shown")
+}
+
+group("prompt style — generated text must not use em-dash / en-dash") {
+    // The on-device model mirrors punctuation it sees; an em-dash reads as "AI-written",
+    // so every user-facing prompt carries this prohibition.
+    check(PromptSafety.noDashClause.contains("—"), "clause names the em-dash it forbids")
+    check(PromptSafety.noDashClause.contains("–"), "clause names the en-dash it forbids")
+    check(PromptSafety.noDashClause.lowercased().contains("never use"), "clause is a hard prohibition")
+    // And the prompts must not slip an em-dash of their own into the model's context.
+    check(!PromptSafety.securityClause.contains("—"), "security clause has no stray em-dash")
 }
 
 group("declutter — newsletter grouping + unsubscribe parsing (pure)") {

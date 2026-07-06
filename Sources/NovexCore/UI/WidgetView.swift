@@ -435,6 +435,9 @@ struct WidgetView: View {
                     citationAction("Done") {
                         Task { await service.markDoneFromCitation(s.messageID, sender: s.sender) }
                     }
+                    citationAction("Archive") {
+                        Task { await service.archiveInMail(s.messageID) }
+                    }
                 }
             }
         }
