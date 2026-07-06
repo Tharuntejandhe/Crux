@@ -77,19 +77,60 @@ final class DeclutterService {
     /// Whether a message is newsletter/promo/bulk mail — i.e. clutter we can
     /// offer to unsubscribe from or mute. Uses Mail's own signals.
     nonisolated static func isNewsletter(_ m: MailMessage) -> Bool {
-        // Bills / receipts are never "clutter" — muting hides a sender from the WHOLE
-        // briefing, so muting your bank or an order confirmation would hide real mail.
-        if m.isTransactional { return false }
-        // Anything with a real List-Unsubscribe IS clearable clutter — including
-        // social-activity pings (Facebook/LinkedIn), which are FYI on the plate but
-        // the user may still want to clear here. Checked BEFORE the ephemeral gate
-        // (security codes/alerts have no unsubscribe, so they stay protected below).
+        // Muting hides a sender across the WHOLE app, so protect anything the user
+        // would never want buried, BEFORE the unsubscribe gate.
+        // 1) Bills / receipts / statements. Apple's category is primary; a keyword
+        //    backstop covers reads where the category is absent or misclassifies a
+        //    receipt (many carry a marketing List-Unsubscribe footer).
+        if m.isTransactional || looksTransactional(m) { return false }
+        // 2) Account / security alerts (new login, new device, password). Social
+        //    login-alert senders (Facebook/LinkedIn) attach a List-Unsubscribe, so
+        //    this MUST win over the unsubscribe gate or muting them buries real
+        //    security warnings.
+        if isSecurityAlert(m) { return false }
+        // A real List-Unsubscribe header = clearable bulk mail (incl. benign social
+        // pings, which the user may still want to clear here).
         if m.unsubscribeType > 0 { return true }
-        // Security codes / login alerts / terms updates (no unsubscribe) are FYI, not
-        // clutter to mute — never let muting suppress them.
+        // Other ephemeral FYI (codes, benign social) is not clutter to mute.
         if m.isEphemeralNotification { return false }
-        if m.automatedType >= 2 { return true }     // bulk/automated marketing
+        // Bulk/automated marketing, UNLESS it's a real person Apple mis-flagged:
+        // short PERSONAL mail often gets a false automated_conversation tag, and
+        // muting a friend is the highest-cost mistake this list can make.
+        if m.automatedType >= 2 && !m.isLikelyPersonalSender { return true }
         return false
+    }
+
+    /// Looks like a bill / receipt / statement by subject, so it's never clutter to
+    /// mute even when Apple's category is missing or it carries a marketing footer.
+    nonisolated static func looksTransactional(_ m: MailMessage) -> Bool {
+        let s = m.subject.lowercased()
+        let markers = ["invoice", "receipt", "order confirmation", "your order",
+                       "payment received", "payment of", "payment successful",
+                       "amount due", "payment due", "your statement", "account statement",
+                       "e-statement", "bill is ready", "your bill", "refund"]
+        return markers.contains { s.contains($0) }
+    }
+
+    /// A dedup key for two copies of the SAME message (Gmail keeps one under INBOX
+    /// and one under All Mail) when no RFC Message-ID is available.
+    nonisolated static func contentKey(_ m: MailMessage) -> String {
+        let day = Int(m.dateReceived.timeIntervalSinceReferenceDate / 86_400)
+        let sender = (m.senderAddress ?? "").lowercased()
+        let subj = m.subject.lowercased().trimmingCharacters(in: .whitespaces)
+        return "\(sender)|\(subj)|\(day)"
+    }
+
+    /// Account/security alerts to protect from muting even when they carry an
+    /// unsubscribe header (login/device/password/verification warnings).
+    nonisolated static func isSecurityAlert(_ m: MailMessage) -> Bool {
+        let t = (m.subject + " " + (m.snippet ?? "")).lowercased()
+        let markers = ["new login", "new sign-in", "new sign in", "sign-in attempt",
+                       "new device", "was accessed", "unusual activity", "unusual sign",
+                       "suspicious", "password was", "password change", "password reset",
+                       "reset your password", "changed your password", "verify your account",
+                       "verification code", "security alert", "security code",
+                       "did you just", "recognize this"]
+        return markers.contains { t.contains($0) }
     }
 
     /// Group inbox newsletter mail by sender, newest name wins, deduped by
@@ -102,7 +143,11 @@ final class DeclutterService {
             guard MailReader.isInboxMailbox(m.mailbox), isNewsletter(m) else { continue }
             guard let addr = m.senderAddress?.lowercased(), !addr.isEmpty else { continue }
             if muted.contains(addr) { continue }
-            let dedupKey = m.messageID ?? "rid\(m.id)"
+            // Dedup Gmail's INBOX + "All Mail" copies. Prefer the RFC Message-ID; when
+            // it's absent (the thread reader doesn't always fill it), fall back to a
+            // sender+subject+day content key so the two copies still collapse to one
+            // (else the "N newsletters" count and per-sender totals inflate up to 2x).
+            let dedupKey = m.messageID ?? Self.contentKey(m)
             if !seen.insert(dedupKey).inserted { continue }
             let hasUnsub = m.unsubscribeType > 0
             if let e = byAddr[addr] {

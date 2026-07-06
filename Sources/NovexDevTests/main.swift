@@ -1088,6 +1088,28 @@ group("tab-sweep fixes (follow-up / money / cleanup)") {
           "cleanup: a 2FA code is NOT clutter")
     check(DeclutterService.isNewsletter(mk(6, "news@promos.com", "50% off everything", automated: 2, unsub: 7)),
           "cleanup: a marketing newsletter IS clutter")
+    // A real person Apple mis-flagged as automated (short personal mail) is NOT
+    // clutter - muting a friend is the worst mistake this list can make.
+    check(!DeclutterService.isNewsletter(mk(7, "raj@gmail.com", "hey did you get my thing?", automated: 2)),
+          "cleanup: a friend's short personal mail is NOT clutter even if Apple tags it automated")
+    // A receipt with a marketing unsubscribe footer and NO Apple category is caught
+    // by the transactional keyword backstop.
+    check(!DeclutterService.isNewsletter(mk(8, "orders@shopify.com", "Your order confirmation #1234", unsub: 1)),
+          "cleanup: an order confirmation is NOT clutter even with an unsubscribe header")
+    // A security/new-login alert that carries an unsubscribe (social login alerts do)
+    // is protected - muting must never bury account-security warnings.
+    check(!DeclutterService.isNewsletter(mk(9, "security@facebookmail.com", "New login to your account", snip: "We noticed a new login from a new device.", unsub: 1)),
+          "cleanup: a new-login security alert is NOT clutter even with an unsubscribe header")
+    // A benign social ping stays clearable.
+    check(DeclutterService.isNewsletter(mk(10, "notify@linkedin.com", "Rahul posted an update", unsub: 1)),
+          "cleanup: a benign social ping IS still clearable")
+    // Discover: adult / dating / gambling never surface in "Worth a look".
+    check(!BriefingService.looksLikeQualityRead(mk(11, "hello@meet.com", "Hot singles waiting to meet you")),
+          "discover: adult/dating content is filtered out")
+    check(!BriefingService.looksLikeQualityRead(mk(12, "promo@casino.com", "Your casino bonus is ready to claim")),
+          "discover: gambling content is filtered out")
+    check(BriefingService.looksLikeQualityRead(mk(13, "team@stratechery.com", "The new platform shift in AI")),
+          "discover: a genuine quality read still passes")
 }
 
 group("P2 tail (Apple subs / unsubscribe source)") {

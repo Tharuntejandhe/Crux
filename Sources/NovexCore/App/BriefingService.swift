@@ -650,8 +650,14 @@ final class BriefingService {
         let junkSubjects = ["loan", "apply now", "% off", " sale", "discount", "winner",
                             "lottery", "free trial", "claim your", "credit card",
                             "adventure begins", "cashback", "% cashback", "limited time",
-                            "act now", "don't miss", "lower card fees"]
-        if junkSubjects.contains(where: { subj.contains($0) }) { return false }
+                            "act now", "don't miss", "lower card fees",
+                            // adult / dating / gambling: never surface in "Worth a look"
+                            // or the wake greeting - stay empty over embarrassing.
+                            "dating", "singles", "hookup", "hook up", "nsfw", "adult",
+                            "xxx", "onlyfans", "casino", "betting", "sportsbook",
+                            "gambling", "escort", "get laid", "meet women", "meet men",
+                            "hot singles", "sexy", "who wants to meet"]
+        if subj.hasPrefix("sale ") || junkSubjects.contains(where: { subj.contains($0) }) { return false }
         return m.subject.count >= 12
     }
 

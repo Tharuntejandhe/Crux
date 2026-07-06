@@ -92,9 +92,14 @@ enum BodyReader {
             tokens = raw.split(whereSeparator: { $0 == "," || $0 == " " || $0 == "\n" }).map(String.init)
         }
         let trimmed = tokens.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        if let h = trimmed.first(where: {
-            $0.lowercased().hasPrefix("https://") || $0.lowercased().hasPrefix("http://")
-        }) { return URL(string: h) }
+        // Prefer https, then http, then mailto - never open a plaintext http link
+        // when a secure one is offered in the same header.
+        if let s = trimmed.first(where: { $0.lowercased().hasPrefix("https://") }) {
+            return URL(string: s)
+        }
+        if let h = trimmed.first(where: { $0.lowercased().hasPrefix("http://") }) {
+            return URL(string: h)
+        }
         if let m = trimmed.first(where: { $0.lowercased().hasPrefix("mailto:") }) {
             return URL(string: m)
         }
